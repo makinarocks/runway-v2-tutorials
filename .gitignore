@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# MLflow / models / data artifacts
+mlruns/
+mlartifacts/
+*.pkl
+*.joblib
+
+# Logs
+*.log
+
+# Zip archives (source bundles generated per tutorial)
+tutorial_source.zip
