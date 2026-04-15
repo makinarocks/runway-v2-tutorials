@@ -152,7 +152,7 @@ def make_pod_operator(
         env_vars=common_env_vars,
         volumes=[shared_volume],
         volume_mounts=[shared_volume_mount],
-        resources=k8s.V1ResourceRequirements(
+        container_resources=k8s.V1ResourceRequirements(
             requests={"cpu": cpu_request, "memory": memory_request},
             limits={"cpu": cpu_limit,    "memory": memory_limit},
         ),
