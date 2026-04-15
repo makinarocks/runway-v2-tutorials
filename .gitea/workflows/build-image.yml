@@ -13,10 +13,10 @@
 #   - dataset/**          (학습 데이터 변경)
 #
 # 사전 준비 (Gitea 저장소 Settings > Secrets and Variables > Actions):
-#   GITEA_CR_USERNAME : Gitea 로그인 사용자명
-#   GITEA_CR_PASSWORD : Gitea 접근 토큰 (패키지 write 권한 포함)
-#   IMAGE_TAG         : 빌드할 이미지 full URL
-#                       예) gitea.v2.mrxrunway.ai/<org>/wind-power:latest
+#   CR_USERNAME : Gitea 로그인 사용자명
+#   CR_PASSWORD : Gitea 접근 토큰 (패키지 write 권한 포함)
+#   IMAGE_TAG   : 빌드할 이미지 full URL
+#                 예) gitea.v2.mrxrunway.ai/<org>/wind-power:latest
 
 name: Build and Push to Gitea CR
 
@@ -25,10 +25,10 @@ on:
     branches:
       - main
     paths:
-      - "tutorials/wind-power-prediction-with-xgboost/task_runner.py"
-      - "tutorials/wind-power-prediction-with-xgboost/Dockerfile"
-      - "tutorials/wind-power-prediction-with-xgboost/requirements.txt"
-      - "tutorials/wind-power-prediction-with-xgboost/dataset/**"
+      - "task_runner.py"
+      - "Dockerfile"
+      - "requirements.txt"
+      - "dataset/**"
 
 jobs:
   build-and-push:
@@ -45,14 +45,14 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: gitea.v2.mrxrunway.ai
-          username: ${{ secrets.GITEA_CR_USERNAME }}
-          password: ${{ secrets.GITEA_CR_PASSWORD }}
+          username: ${{ secrets.CR_USERNAME }}
+          password: ${{ secrets.CR_PASSWORD }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: tutorials/wind-power-prediction-with-xgboost
-          file: tutorials/wind-power-prediction-with-xgboost/Dockerfile
+          context: .
+          file: Dockerfile
           push: true
           tags: ${{ secrets.IMAGE_TAG }}
           cache-from: type=registry,ref=${{ secrets.IMAGE_TAG }}-cache

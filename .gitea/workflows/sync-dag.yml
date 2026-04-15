@@ -12,8 +12,8 @@
 #   - wind_power_prediction_v2.py    (DAG 파일 변경)
 #
 # 사전 준비 (Gitea 저장소 Settings > Secrets and Variables > Actions):
-#   GITEA_USERNAME    : Gitea 로그인 사용자명
-#   GITEA_TOKEN       : Gitea 접근 토큰 (airflow-dags 저장소 write 권한 포함)
+#   GIT_USERNAME      : Gitea 로그인 사용자명
+#   GIT_TOKEN         : Gitea 접근 토큰 (airflow-dags 저장소 write 권한 포함)
 #   AIRFLOW_DAGS_REPO : airflow-dags 저장소 URL
 #                       예) https://gitea.v2.mrxrunway.ai/<org>/airflow-dags.git
 
@@ -36,7 +36,7 @@ jobs:
 
       - name: Clone airflow-dags repository
         run: |
-          git clone https://${{ secrets.GITEA_USERNAME }}:${{ secrets.GITEA_TOKEN }}@$(echo "${{ secrets.AIRFLOW_DAGS_REPO }}" | sed 's|https://||') /tmp/airflow-dags
+          git clone https://${{ secrets.GIT_USERNAME }}:${{ secrets.GIT_TOKEN }}@$(echo "${{ secrets.AIRFLOW_DAGS_REPO }}" | sed 's|https://||') /tmp/airflow-dags
 
       - name: Copy DAG file to airflow-dags
         run: |
@@ -46,8 +46,8 @@ jobs:
       - name: Commit and push to airflow-dags
         run: |
           cd /tmp/airflow-dags
-          git config user.name "${{ secrets.GITEA_USERNAME }}"
-          git config user.email "${{ secrets.GITEA_USERNAME }}@gitea"
+          git config user.name "${{ secrets.GIT_USERNAME }}"
+          git config user.email "${{ secrets.GIT_USERNAME }}@gitea"
           git add wind_power_prediction/v3/wind_power_prediction.py
           git diff --cached --quiet && echo "변경 없음, 스킵" && exit 0
           git commit -m "chore: sync wind_power_prediction v3 DAG (from ${{ github.repository }}@${{ github.sha }})"
