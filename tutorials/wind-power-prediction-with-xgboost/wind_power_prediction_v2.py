@@ -235,7 +235,8 @@ def make_build_image_task() -> KubernetesPodOperator:
         is_delete_operator_pod=True,
         get_logs=True,
         log_events_on_failure=True,
-        in_cluster=True,
+        kubernetes_conn_id=KUBERNETES_CONN_ID,
+        in_cluster=False,
         service_account_name=SERVICE_ACCOUNT,
         startup_timeout_seconds=600,  # 이미지 빌드는 시간이 걸리므로 여유 있게 설정
     )
