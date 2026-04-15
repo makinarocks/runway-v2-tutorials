@@ -46,8 +46,8 @@ from kubernetes.client import models as k8s
 
 # ── 빌드 옵션 ──────────────────────────────────────────────────────────────────
 # 아래 두 줄 중 하나를 선택해서 주석 해제하세요.
-# BUILD_MODE = "kaniko"   # Option A: DAG 실행 시 Kaniko Pod가 자동으로 이미지를 빌드 & 푸시
-BUILD_MODE = "manual"     # Option B: 직접 빌드하거나 Gitea Actions CI/CD (.gitea/workflows/build-image.yml) 사용
+BUILD_MODE = "kaniko"     # Option A: DAG 실행 시 Kaniko Pod가 자동으로 이미지를 빌드 & 푸시
+# BUILD_MODE = "manual"  # Option B: 직접 빌드하거나 Gitea Actions CI/CD (.gitea/workflows/build-image.yml) 사용
 
 # ── K8s 공통 설정 ───────────────────────────────────────────────────────────────
 NAMESPACE        = "exam2011-ef-02"                                              # Airflow 태스크 Pod가 생성될 namespace
@@ -250,7 +250,7 @@ default_args = {
 }
 
 with DAG(
-    dag_id="wind_power_prediction_v2",
+    dag_id="wind_power_prediction_v3",
     default_args=default_args,
     description="Wind power prediction with XGBoost + MLflow tracking (KubernetesPodOperator)",
     schedule=None,   # 수동 trigger 전용
