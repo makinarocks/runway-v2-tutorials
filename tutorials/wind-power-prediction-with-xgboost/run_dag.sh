@@ -1,7 +1,7 @@
 #!/bin/bash
 
 AIRFLOW_HOST="https://airflow.v2.mrxrunway.ai"
-DAG_ID="wind_power_prediction_2"
+DAG_ID="wind_power_prediction_v2"
 API_KEY="eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzIiwiaXNzIjpbXSwiYXVkIjoiYXBhY2hlLWFpcmZsb3ciLCJuYmYiOjE3NzQzNjMyNzMsImV4cCI6MTc3NDQ0OTY3MywiaWF0IjoxNzc0MzYzMjczfQ.kIJs59Ik8_lkkUrlG3YQo3CsV5bxyu3T7ZDc6Tq_2IpzZZM_7O_gH0w-1nmV0UZ2CdS88lq6RGA6cA5Ce2EY4g"
 
 echo "=== DAG 실행: ${DAG_ID} ==="
