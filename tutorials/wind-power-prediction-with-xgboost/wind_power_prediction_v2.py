@@ -152,21 +152,10 @@ def make_pod_operator(
         env_vars=common_env_vars,
         volumes=[shared_volume],
         volume_mounts=[shared_volume_mount],
-        executor_config={
-            "pod_override": k8s.V1Pod(
-                spec=k8s.V1PodSpec(
-                    containers=[
-                        k8s.V1Container(
-                            name="base",
-                            resources=k8s.V1ResourceRequirements(
-                                requests={"cpu": cpu_request, "memory": memory_request},
-                                limits={"cpu": cpu_limit,    "memory": memory_limit},
-                            ),
-                        )
-                    ]
-                )
-            )
-        },
+        container_resources=k8s.V1ResourceRequirements(
+            requests={"cpu": cpu_request, "memory": memory_request},
+            limits={"cpu": cpu_limit,    "memory": memory_limit},
+        ),
         image_pull_secrets=[k8s.V1LocalObjectReference(name=IMAGE_PULL_SECRET)],
         is_delete_operator_pod=True,   # Pod 완료 후 자동 삭제 (로그는 Airflow UI에서 확인)
         get_logs=True,                  # Pod stdout/stderr를 Airflow 태스크 로그로 스트리밍
@@ -237,7 +226,7 @@ def make_build_image_task() -> KubernetesPodOperator:
         env_vars=kaniko_env_vars,
         volumes=[registry_volume],
         volume_mounts=[registry_volume_mount],
-        resources=k8s.V1ResourceRequirements(
+        container_resources=k8s.V1ResourceRequirements(
             requests={"cpu": "500m", "memory": "1Gi"},
             limits={"cpu": "1",     "memory": "2Gi"},
         ),
