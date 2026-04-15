@@ -152,9 +152,18 @@ def make_pod_operator(
         env_vars=common_env_vars,
         volumes=[shared_volume],
         volume_mounts=[shared_volume_mount],
-        container_resources=k8s.V1ResourceRequirements(
-            requests={"cpu": cpu_request, "memory": memory_request},
-            limits={"cpu": cpu_limit,    "memory": memory_limit},
+        pod_override=k8s.V1Pod(
+            spec=k8s.V1PodSpec(
+                containers=[
+                    k8s.V1Container(
+                        name="base",
+                        resources=k8s.V1ResourceRequirements(
+                            requests={"cpu": cpu_request, "memory": memory_request},
+                            limits={"cpu": cpu_limit,    "memory": memory_limit},
+                        ),
+                    )
+                ]
+            )
         ),
         image_pull_secrets=[k8s.V1LocalObjectReference(name=IMAGE_PULL_SECRET)],
         is_delete_operator_pod=True,   # Pod 완료 후 자동 삭제 (로그는 Airflow UI에서 확인)
