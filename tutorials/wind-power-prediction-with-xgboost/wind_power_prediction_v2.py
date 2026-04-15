@@ -50,10 +50,11 @@ BUILD_MODE = "kaniko"     # Option A: DAG 실행 시 Kaniko Pod가 자동으로 
 # BUILD_MODE = "manual"  # Option B: 직접 빌드하거나 Gitea Actions CI/CD (.gitea/workflows/build-image.yml) 사용
 
 # ── K8s 공통 설정 ───────────────────────────────────────────────────────────────
-NAMESPACE        = "exam2011-ef-02"                                              # Airflow 태스크 Pod가 생성될 namespace
-IMAGE            = "gitea.v2.mrxrunway.ai/exam2011-ef-02/wind-power:latest"       # [수정] Gitea CR 이미지 URL
-SHARED_VOLUME_ID = "model-registry"                                          # Runway 플랫폼 UI에서 생성한 볼륨 ID
-SERVICE_ACCOUNT  = "airflow"                                              # Pod에 부여할 ServiceAccount
+NAMESPACE           = "exam2011-ef-02"                                           # Airflow 태스크 Pod가 생성될 namespace
+IMAGE               = "gitea.v2.mrxrunway.ai/exam2011-ef-02/wind-power:latest"   # [수정] Gitea CR 이미지 URL
+SHARED_VOLUME_ID    = "model-registry"                                           # Runway 플랫폼 UI에서 생성한 볼륨 ID
+SERVICE_ACCOUNT     = "airflow"                                                  # Pod에 부여할 ServiceAccount
+KUBERNETES_CONN_ID  = "kubernetes_exam2011"                                      # Airflow Admin > Connections에서 생성한 K8s Connection ID
 
 # Gitea CR Secret (두 가지 Secret 사용)
 #
@@ -160,7 +161,8 @@ def make_pod_operator(
         is_delete_operator_pod=True,   # Pod 완료 후 자동 삭제 (로그는 Airflow UI에서 확인)
         get_logs=True,                  # Pod stdout/stderr를 Airflow 태스크 로그로 스트리밍
         log_events_on_failure=True,    # 실패 시 K8s 이벤트 로그 출력
-        in_cluster=True,               # Airflow가 K8s 클러스터 내부에서 실행되는 경우 True
+        kubernetes_conn_id=KUBERNETES_CONN_ID,
+        in_cluster=False,
         service_account_name=SERVICE_ACCOUNT,
         startup_timeout_seconds=300,
     )
