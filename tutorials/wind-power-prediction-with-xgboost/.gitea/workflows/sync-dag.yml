@@ -1,0 +1,96 @@
+# .gitea/workflows/sync-dag.yml
+#
+# DAG 자동 동기화 — wind_power_prediction_v4.py → airflow-dags 저장소
+#
+# 동작 방식:
+#   wind_power_prediction_v4.py 가 main 브랜치에 push되면 자동으로
+#   Gitea API를 통해 airflow-dags 저장소의
+#   wind_power_prediction/v4/wind_power_prediction.py 파일을 업데이트한다.
+#   Airflow는 git-sync를 통해 airflow-dags 저장소를 자동으로 감시하므로
+#   이 워크플로우가 실행되면 Airflow가 변경된 DAG를 자동으로 인식한다.
+#
+# 트리거 대상 파일:
+#   - wind_power_prediction_v4.py    (DAG 파일 변경)
+#
+# 사전 준비 (Gitea 저장소 Settings > Secrets and Variables > Actions):
+#   GIT_USERNAME : Gitea 로그인 사용자명
+#   GIT_TOKEN    : Gitea 접근 토큰 (airflow-dags 저장소 write 권한 포함)
+
+name: Sync DAG to airflow-dags
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "wind_power_prediction_v4.py"
+
+jobs:
+  sync-dag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout wind-power-prediction repository
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: apt-get install -y jq 2>/dev/null || yum install -y jq 2>/dev/null || true
+
+      - name: Sync DAG via Gitea API
+        env:
+          API_TOKEN: ${{ secrets.GIT_TOKEN }}
+        run: |
+          DEST_PATH="wind_power_prediction/v4/wind_power_prediction.py"
+          API_BASE="https://gitea.v2.mrxrunway.ai/api/v1/repos/rwyt-energy-forecasting/airflow-dags"
+          BRANCH="main"
+
+          # DAG 파일을 base64로 인코딩 (-w 0: 개행 없이 한 줄로)
+          CONTENT=$(base64 -w 0 wind_power_prediction_v4.py 2>/dev/null || base64 wind_power_prediction_v4.py | tr -d '\n')
+
+          # 기존 파일 SHA 조회 (업데이트 시 필요)
+          FILE_SHA=$(curl -s \
+            -H "Authorization: token ${API_TOKEN}" \
+            "${API_BASE}/contents/${DEST_PATH}?ref=${BRANCH}" \
+            | jq -r '.sha // empty')
+
+          COMMIT_MSG="chore: sync wind_power_prediction v4 DAG (from ${{ github.repository }}@${{ github.sha }})"
+
+          if [ -z "${FILE_SHA}" ]; then
+            echo "신규 파일 생성..."
+            PAYLOAD=$(jq -n \
+              --arg msg "${COMMIT_MSG}" \
+              --arg content "${CONTENT}" \
+              --arg branch "${BRANCH}" \
+              '{"message":$msg,"content":$content,"branch":$branch}')
+            HTTP_CODE=$(curl -s -o /tmp/api_response.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: token ${API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "${PAYLOAD}" \
+              "${API_BASE}/contents/${DEST_PATH}")
+          else
+            echo "기존 파일 업데이트 (SHA: ${FILE_SHA})..."
+            PAYLOAD=$(jq -n \
+              --arg msg "${COMMIT_MSG}" \
+              --arg content "${CONTENT}" \
+              --arg branch "${BRANCH}" \
+              --arg sha "${FILE_SHA}" \
+              '{"message":$msg,"content":$content,"branch":$branch,"sha":$sha}')
+            HTTP_CODE=$(curl -s -o /tmp/api_response.json -w "%{http_code}" \
+              -X PUT \
+              -H "Authorization: token ${API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "${PAYLOAD}" \
+              "${API_BASE}/contents/${DEST_PATH}")
+          fi
+
+          echo "API 응답 코드: ${HTTP_CODE}"
+          if [ "${HTTP_CODE}" != "200" ] && [ "${HTTP_CODE}" != "201" ]; then
+            echo "❌ API 호출 실패"
+            cat /tmp/api_response.json
+            exit 1
+          fi
+          echo "✅ DAG 동기화 완료"
+          echo "   SOURCE : wind_power_prediction_v4.py"
+          echo "   DEST   : ${DEST_PATH}"
+          echo "   HTTP   : ${HTTP_CODE}"

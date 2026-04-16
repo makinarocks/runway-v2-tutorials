@@ -4,3 +4,5 @@ scikit-learn
 mlflow
 apache-airflow
 requests
+boto3
+# S3 artifact sharing for inter-task communication

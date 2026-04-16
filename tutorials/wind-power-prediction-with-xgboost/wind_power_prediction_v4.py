@@ -36,7 +36,7 @@ v1과의 차이점:
 
 from datetime import timedelta
 
-from airflow.sdk import DAG
+from airflow.sdk import DAG, task
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from kubernetes.client import models as k8s
 
@@ -46,15 +46,14 @@ from kubernetes.client import models as k8s
 
 # ── 빌드 옵션 ──────────────────────────────────────────────────────────────────
 # 아래 두 줄 중 하나를 선택해서 주석 해제하세요.
-BUILD_MODE = "kaniko"     # Option A: DAG 실행 시 Kaniko Pod가 자동으로 이미지를 빌드 & 푸시
-# BUILD_MODE = "manual"  # Option B: 직접 빌드하거나 Gitea Actions CI/CD (.gitea/workflows/build-image.yml) 사용
+# BUILD_MODE = "kaniko"  # Option A: DAG 실행 시 Kaniko Pod가 자동으로 이미지를 빌드 & 푸시
+BUILD_MODE = "manual"    # Option B: 직접 빌드하거나 Gitea Actions CI/CD (.gitea/workflows/build-image.yml) 사용
 
 # ── K8s 공통 설정 ───────────────────────────────────────────────────────────────
-NAMESPACE           = "exam2011-ef-02"                                           # Airflow 태스크 Pod가 생성될 namespace
-IMAGE               = "gitea.v2.mrxrunway.ai/exam2011-ef-02/wind-power:latest"   # [수정] Gitea CR 이미지 URL
-SHARED_VOLUME_ID    = "model-registry"                                           # Runway 플랫폼 UI에서 생성한 볼륨 ID
-SERVICE_ACCOUNT     = "airflow"                                                  # Pod에 부여할 ServiceAccount
-KUBERNETES_CONN_ID  = "kubernetes_exam2011"                                      # Airflow Admin > Connections에서 생성한 K8s Connection ID
+NAMESPACE          = "rwyt-energy-forecasting"                                  # Airflow 태스크 Pod가 생성될 namespace
+IMAGE              = "gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest"  # [수정] Gitea CR 이미지 URL
+S3_BUCKET          = "rwyt-energy-forecasting"                                  # 태스크 간 아티팩트 공유용 S3 bucket
+IMAGE_PULL_SECRET  = "gitea-registry-pull"                                      # Gitea CR pull secret (namespace에 존재해야 함)
 
 # Gitea CR Secret (두 가지 Secret 사용)
 #
@@ -74,12 +73,11 @@ KUBERNETES_CONN_ID  = "kubernetes_exam2011"                                     
 #         --docker-username=<gitea-username> \
 #         --docker-password=<gitea-token> \
 #         -n <NAMESPACE>
-GIT_SECRET        = "gitea-registry"       # Kaniko git clone 인증 (Opaque, username/password)
-IMAGE_PULL_SECRET = "gitea-registry-pull"  # Pod 이미지 pull + Kaniko registry push (dockerconfigjson)
-REGISTRY_SECRET   = "gitea-registry-pull"  # Kaniko docker config 마운트용 (IMAGE_PULL_SECRET과 동일)
+GIT_SECRET      = "gitea-registry"       # Kaniko git clone 인증 (Opaque, username/password)
+REGISTRY_SECRET = "gitea-registry-pull"  # Kaniko docker config 마운트용 (IMAGE_PULL_SECRET과 동일)
 
 # ── Kaniko 설정 (BUILD_MODE = "kaniko" 일 때만 사용) ────────────────────────────
-GITEA_REPO_URL     = "https://gitea.v2.mrxrunway.ai/exam2011-ef-02/wind-power-prediction"  # Gitea 저장소 URL
+GITEA_REPO_URL     = "https://gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction"  # Gitea 저장소 URL
 GIT_BRANCH         = "main"
 DOCKERFILE_SUBPATH = ""  # Dockerfile이 저장소 루트에 위치하므로 빈 문자열
 
@@ -101,27 +99,9 @@ MLFLOW_S3_ENDPOINT_URL = "https://s3.v2.mrxrunway.ai"
 
 
 # =============================================================================
-# [공유 볼륨] 태스크 간 아티팩트를 공유하는 볼륨
-# - Runway 플랫폼 UI에서 생성한 볼륨을 SHARED_VOLUME_ID로 지정
-# - 모든 Pod에 /mnt/shared-workspace 경로로 동일하게 마운트됨
-# - ReadWriteMany 모드 볼륨 필요 (load_data, load_model 병렬 실행 시)
-# =============================================================================
-shared_volume = k8s.V1Volume(
-    name="shared-workspace",
-    persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
-        claim_name=SHARED_VOLUME_ID,
-    ),
-)
-
-shared_volume_mount = k8s.V1VolumeMount(
-    name="shared-workspace",
-    mount_path="/mnt/shared-workspace",
-)
-
-
-# =============================================================================
 # [환경 변수] 모든 ML Pod에 공통으로 주입되는 환경변수
 # - task_runner.py가 os.getenv()로 읽어 사용
+# - DAG_RUN_ID: Airflow 템플릿 {{ run_id }}로 각 DAG run마다 고유한 S3 prefix 생성
 # =============================================================================
 common_env_vars = [
     k8s.V1EnvVar(name="RUNWAY_API_KEY",        value=RUNWAY_API_KEY),
@@ -129,12 +109,13 @@ common_env_vars = [
     k8s.V1EnvVar(name="AWS_SECRET_ACCESS_KEY",  value=AWS_SECRET_ACCESS_KEY),
     k8s.V1EnvVar(name="MLFLOW_TRACKING_URI",    value=MLFLOW_TRACKING_URI),
     k8s.V1EnvVar(name="MLFLOW_S3_ENDPOINT_URL", value=MLFLOW_S3_ENDPOINT_URL),
+    k8s.V1EnvVar(name="S3_BUCKET",              value=S3_BUCKET),
+    k8s.V1EnvVar(name="DAG_RUN_ID",             value="{{ run_id }}"),
 ]
 
 
-# =============================================================================
-# [헬퍼] ML 태스크용 KubernetesPodOperator 생성 함수
-# =============================================================================
+
+
 def make_pod_operator(
     task_id: str,
     step: str,
@@ -144,6 +125,10 @@ def make_pod_operator(
     memory_limit: str = "512Mi",
 ) -> KubernetesPodOperator:
     """공통 설정을 가진 KubernetesPodOperator를 생성한다."""
+    pull_secrets = (
+        [k8s.V1LocalObjectReference(name=IMAGE_PULL_SECRET)]
+        if IMAGE_PULL_SECRET else []
+    )
     return KubernetesPodOperator(
         task_id=task_id,
         namespace=NAMESPACE,
@@ -151,19 +136,15 @@ def make_pod_operator(
         image_pull_policy="Always",  # 개발 중 항상 최신 이미지 사용. 안정화 후 IfNotPresent로 변경
         cmds=["python", "task_runner.py", "--step", step],
         env_vars=common_env_vars,
-        volumes=[shared_volume],
-        volume_mounts=[shared_volume_mount],
         container_resources=k8s.V1ResourceRequirements(
             requests={"cpu": cpu_request, "memory": memory_request},
             limits={"cpu": cpu_limit,    "memory": memory_limit},
         ),
-        image_pull_secrets=[k8s.V1LocalObjectReference(name=IMAGE_PULL_SECRET)],
-        is_delete_operator_pod=True,   # Pod 완료 후 자동 삭제 (로그는 Airflow UI에서 확인)
-        get_logs=True,                  # Pod stdout/stderr를 Airflow 태스크 로그로 스트리밍
-        log_events_on_failure=True,    # 실패 시 K8s 이벤트 로그 출력
-        kubernetes_conn_id=KUBERNETES_CONN_ID,
-        in_cluster=False,
-        service_account_name=SERVICE_ACCOUNT,
+        image_pull_secrets=pull_secrets,
+        is_delete_operator_pod=True,  # Pod 완료 후 자동 삭제 (로그는 Airflow UI에서 확인)
+        get_logs=True,                # Pod stdout/stderr를 Airflow 태스크 로그로 스트리밍
+        log_events_on_failure=True,  # 실패 시 K8s 이벤트 로그 출력
+        in_cluster=True,
         startup_timeout_seconds=300,
     )
 
@@ -235,9 +216,7 @@ def make_build_image_task() -> KubernetesPodOperator:
         is_delete_operator_pod=True,
         get_logs=True,
         log_events_on_failure=True,
-        kubernetes_conn_id=KUBERNETES_CONN_ID,
-        in_cluster=False,
-        service_account_name=SERVICE_ACCOUNT,
+        in_cluster=True,
         startup_timeout_seconds=600,  # 이미지 빌드는 시간이 걸리므로 여유 있게 설정
     )
 
@@ -246,14 +225,14 @@ def make_build_image_task() -> KubernetesPodOperator:
 # [DAG 정의]
 # =============================================================================
 default_args = {
-    "owner": "airflow",
+    "owner": "gyuseon.han@makinarocks.ai",
     "depends_on_past": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
 }
 
 with DAG(
-    dag_id="wind_power_prediction_v3",
+    dag_id="wind_power_prediction_v4",
     default_args=default_args,
     description="Wind power prediction with XGBoost + MLflow tracking (KubernetesPodOperator)",
     schedule=None,   # 수동 trigger 전용
@@ -334,8 +313,17 @@ with DAG(
         t_build_image = make_build_image_task()
         t_build_image >> [t_load_data, t_load_model]
     else:
-        # manual: 이미지가 이미 빌드되어 있다고 가정
-        # Gitea Actions CI/CD → .gitea/workflows/build-image.yml 참고
-        pass
+        pass  # manual: 이미지가 이미 빌드되어 있다고 가정
 
     [t_load_data, t_load_model] >> t_train_model >> t_evaluate_model >> t_log_to_mlflow
+
+
+
+
+
+
+
+
+
+
+
