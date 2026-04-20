@@ -30,8 +30,8 @@ AWS_SECRET_ACCESS_KEY = "pPWjNwymzm4B52d3PrnHjR5NPaOnMYY_f2y1c22gNwU"
 # MLflow 실험/모델 이름
 # - EXPERIMENT_NAME: "{프로젝트ID}.{실험명}" 형식 (Runway naming rule)
 # - MODEL_NAME: MLflow Model Registry에 등록할 모델 이름
-EXPERIMENT_NAME = "tutorial-test.wind-power-prediction"
-MODEL_NAME = "tutorial-test.wind-power-xgboost"
+EXPERIMENT_NAME = "tutorial-ml-workflow.wind-power-prediction"
+MODEL_NAME = "tutorial-ml-workflow.wind-power-xgboost"
 
 # XGBoost 하이퍼파라미터
 XGB_PARAMS = {

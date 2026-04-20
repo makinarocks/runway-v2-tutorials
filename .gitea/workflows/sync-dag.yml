@@ -1,0 +1,62 @@
+# .gitea/workflows/sync-dag.yml
+#
+# DAG 자동 동기화 — wind_power_prediction_v2.py → airflow-dags 저장소
+#
+# 동작 방식:
+#   wind_power_prediction_v2.py 가 main 브랜치에 push되면 자동으로
+#   airflow-dags 저장소의 wind_power_prediction/v3/ 경로에 DAG 파일을 동기화한다.
+#   Airflow는 git-sync를 통해 airflow-dags 저장소를 자동으로 감시하므로
+#   이 워크플로우가 실행되면 Airflow가 변경된 DAG를 자동으로 인식한다.
+#
+# 트리거 대상 파일:
+#   - wind_power_prediction_v2.py    (DAG 파일 변경)
+#
+# 사전 준비 (Gitea 저장소 Settings > Secrets and Variables > Actions):
+#   GIT_USERNAME      : Gitea 로그인 사용자명
+#   GIT_TOKEN         : Gitea 접근 토큰 (airflow-dags 저장소 write 권한 포함)
+#   AIRFLOW_DAGS_REPO : airflow-dags 저장소 URL
+#                       예) https://gitea.v2.mrxrunway.ai/<org>/airflow-dags.git
+
+name: Sync DAG to airflow-dags
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "wind_power_prediction_v2.py"
+
+jobs:
+  sync-dag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout wind-power-prediction repository
+        uses: actions/checkout@v4
+
+      - name: Clone airflow-dags repository
+        run: |
+          git clone https://${{ secrets.GIT_USERNAME }}:${{ secrets.GIT_TOKEN }}@$(echo "${{ secrets.AIRFLOW_DAGS_REPO }}" | sed 's|https://||') /tmp/airflow-dags
+
+      - name: Copy DAG file to airflow-dags
+        run: |
+          mkdir -p /tmp/airflow-dags/wind_power_prediction/v3
+          cp wind_power_prediction_v2.py /tmp/airflow-dags/wind_power_prediction/v3/wind_power_prediction.py
+
+      - name: Commit and push to airflow-dags
+        run: |
+          cd /tmp/airflow-dags
+          git config user.name "${{ secrets.GIT_USERNAME }}"
+          git config user.email "${{ secrets.GIT_USERNAME }}@gitea"
+          git add wind_power_prediction/v3/wind_power_prediction.py
+          git diff --cached --quiet && echo "변경 없음, 스킵" && exit 0
+          git commit -m "chore: sync wind_power_prediction v3 DAG (from ${{ github.repository }}@${{ github.sha }})"
+          git push
+
+      - name: Sync summary
+        run: |
+          echo "✅ DAG 동기화 완료"
+          echo "   SOURCE : wind_power_prediction_v2.py"
+          echo "   DEST   : wind_power_prediction/v3/wind_power_prediction.py"
+          echo "   COMMIT : ${{ github.sha }}"
+          echo "   BRANCH : ${{ github.ref_name }}"
