@@ -1,37 +1,26 @@
 """
-wind_power_prediction_v2.py — KubernetesPodOperator 기반 DAG
+wind_power_prediction_v4.py — KubernetesPodOperator 기반 DAG
 
-v1과의 차이점:
+v1(PythonOperator) 대비 핵심 변경:
 - @task 데코레이터(PythonOperator) → KubernetesPodOperator
 - 각 태스크가 별도 K8s Pod에서 실행 (리소스 격리, 독립적 패키지 환경)
-- 태스크 간 중간 아티팩트: /tmp 대신 공유 PVC(/mnt/shared-workspace) 사용
-- XCom 불필요: 모든 아티팩트를 공유 PVC 고정 경로로 주고받음
-- load_data / load_model 진짜 병렬 실행 가능 (K8s Pod는 fd fork 문제 없음)
+- 태스크 간 아티팩트 공유: XCom/PVC 대신 S3(MinIO) prefix 사용
+  (DAG_RUN_ID 별로 격리된 경로, {{ run_id }} 템플릿으로 주입)
 
-이미지 빌드 방식 (BUILD_MODE):
-  "kaniko" [Option A] DAG 실행 시작 시 Kaniko Pod가 자동으로 이미지를 빌드 & 푸시
-           파이프라인:
-             build_image → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
-           사전 준비:
-             1. 레지스트리 인증 Secret 생성:
-                  kubectl create secret generic registry-credentials \\
-                    --from-file=.dockerconfigjson=$HOME/.docker/config.json \\
-                    --type=kubernetes.io/dockerconfigjson \\
-                    -n <NAMESPACE>
-             2. GITEA_REPO_URL, GITEA_TOKEN 설정
+이미지 빌드:
+  Gitea Actions CI/CD (.gitea/workflows/build-image.yml) 가 task_runner.py,
+  Dockerfile, requirements.txt, dataset/** 변경 시 자동으로 이미지를 빌드하여
+  Gitea Container Registry에 푸시한다. DAG는 :latest 태그를 pull 해서 실행.
 
-  "manual" [Option B] 이미지를 직접 빌드하거나 Gitea Actions CI/CD로 자동 빌드
-           - 직접 빌드:  docker build -t <IMAGE> . && docker push <IMAGE>
-           - CI/CD 자동: .gitea/workflows/build-image.yml 이 git push 시 자동 실행
-           파이프라인:
-             [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
+파이프라인:
+  ensure_pull_secret → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
 
 공통 사전 준비:
-  1. 공유 볼륨 생성:
-       Runway 플랫폼 UI에서 볼륨을 생성하고 볼륨 ID를 아래 SHARED_VOLUME_ID 에 입력
-       (여러 Pod가 동시에 마운트하므로 ReadWriteMany 모드 지원 볼륨 사용)
-
-  2. 아래 [사용자 설정] 섹션의 상수를 환경에 맞게 수정
+  1. Runway 프로젝트 네임스페이스에 RoleBinding 생성 (airflow scheduler SA → edit)
+  2. OpenBao KV v2 에 시크릿 등록:
+       namespace=<project-id>, mount=secret, path=wind-power
+       { aws_access_key_id, aws_secret_access_key, gitea_username, gitea_password }
+  3. 아래 [사용자 설정] 섹션의 상수를 환경에 맞게 수정
 """
 
 from datetime import timedelta
@@ -44,42 +33,11 @@ from kubernetes.client import models as k8s
 # [사용자 설정] 환경에 맞게 반드시 수정
 # =============================================================================
 
-# ── 빌드 옵션 ──────────────────────────────────────────────────────────────────
-# 아래 두 줄 중 하나를 선택해서 주석 해제하세요.
-# BUILD_MODE = "kaniko"  # Option A: DAG 실행 시 Kaniko Pod가 자동으로 이미지를 빌드 & 푸시
-BUILD_MODE = "manual"    # Option B: 직접 빌드하거나 Gitea Actions CI/CD (.gitea/workflows/build-image.yml) 사용
-
 # ── K8s 공통 설정 ───────────────────────────────────────────────────────────────
 NAMESPACE          = "rwyt-energy-forecasting"                                  # Airflow 태스크 Pod가 생성될 namespace
-IMAGE              = "gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest"  # [수정] Gitea CR 이미지 URL
+IMAGE              = "gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest"  # Gitea CR 이미지 URL
 S3_BUCKET          = "rwyt-energy-forecasting"                                  # 태스크 간 아티팩트 공유용 S3 bucket
-IMAGE_PULL_SECRET  = "gitea-registry-pull"                                      # Gitea CR pull secret (namespace에 존재해야 함)
-
-# Gitea CR Secret (두 가지 Secret 사용)
-#
-# [1] gitea-registry (Opaque) — Kaniko git clone 인증용
-#     username / password 키를 secretKeyRef로 참조
-#     생성 명령어:
-#       kubectl create secret generic gitea-registry \
-#         --from-literal=username=<gitea-username> \
-#         --from-literal=password=<gitea-token> \
-#         -n <NAMESPACE>
-#
-# [2] gitea-registry-pull (kubernetes.io/dockerconfigjson) — 이미지 pull + Kaniko push용
-#     K8s imagePullSecrets는 dockerconfigjson 타입만 허용하므로 별도 Secret 필요
-#     생성 명령어:
-#       kubectl create secret docker-registry gitea-registry-pull \
-#         --docker-server=gitea.v2.mrxrunway.ai \
-#         --docker-username=<gitea-username> \
-#         --docker-password=<gitea-token> \
-#         -n <NAMESPACE>
-GIT_SECRET      = "gitea-registry"       # Kaniko git clone 인증 (Opaque, username/password)
-REGISTRY_SECRET = "gitea-registry-pull"  # Kaniko docker config 마운트용 (IMAGE_PULL_SECRET과 동일)
-
-# ── Kaniko 설정 (BUILD_MODE = "kaniko" 일 때만 사용) ────────────────────────────
-GITEA_REPO_URL     = "https://gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction"  # Gitea 저장소 URL
-GIT_BRANCH         = "main"
-DOCKERFILE_SUBPATH = ""  # Dockerfile이 저장소 루트에 위치하므로 빈 문자열
+IMAGE_PULL_SECRET  = "gitea-registry-pull"                                      # ensure_pull_secret 태스크가 자동 생성/갱신
 
 # ── Runway / MLflow 크레덴셜 ───────────────────────────────────────────────────
 # - RUNWAY_API_KEY: Keycloak offline token (Runway UI > 사용자 설정 > API 토큰에서 발급)
@@ -228,78 +186,6 @@ def make_pod_operator(
 
 
 # =============================================================================
-# [Option A] Kaniko 이미지 빌드 태스크
-# - BUILD_MODE = "kaniko" 일 때 DAG 첫 번째 태스크로 실행됨
-# - Gitea 저장소를 빌드 컨텍스트로 사용하여 Dockerfile을 빌드 & 푸시
-# - 레지스트리 인증: registry-credentials Secret을 /kaniko/.docker/config.json 으로 마운트
-# =============================================================================
-def make_build_image_task() -> KubernetesPodOperator:
-    """Kaniko를 사용하여 Docker 이미지를 빌드하고 레지스트리에 푸시한다."""
-    registry_volume = k8s.V1Volume(
-        name="docker-config",
-        secret=k8s.V1SecretVolumeSource(
-            secret_name=REGISTRY_SECRET,
-            items=[k8s.V1KeyToPath(key=".dockerconfigjson", path="config.json")],
-        ),
-    )
-    registry_volume_mount = k8s.V1VolumeMount(
-        name="docker-config",
-        mount_path="/kaniko/.docker",
-        read_only=True,
-    )
-
-    # Gitea 인증: gitea-registry Secret에서 username/password를 읽어 Kaniko git clone에 주입
-    kaniko_env_vars = [
-        k8s.V1EnvVar(
-            name="GIT_USERNAME",
-            value_from=k8s.V1EnvVarSource(
-                secret_key_ref=k8s.V1SecretKeySelector(name=GIT_SECRET, key="username")
-            ),
-        ),
-        k8s.V1EnvVar(
-            name="GIT_PASSWORD",
-            value_from=k8s.V1EnvVarSource(
-                secret_key_ref=k8s.V1SecretKeySelector(name=GIT_SECRET, key="password")
-            ),
-        ),
-    ]
-
-    # 빌드 컨텍스트: Gitea git URL
-    # Kaniko가 git clone 후 Dockerfile로 빌드 (DOCKERFILE_SUBPATH가 빈 문자열이면 루트 사용)
-    git_context = f"{GITEA_REPO_URL}#{GIT_BRANCH}"
-    kaniko_args = [
-        f"--context={git_context}",
-        "--dockerfile=Dockerfile",
-        f"--destination={IMAGE}",
-        "--cache=false",  # 레이어 캐시 비활성화. 레지스트리가 지원하면 --cache=true 로 변경
-    ]
-    if DOCKERFILE_SUBPATH:
-        kaniko_args.insert(1, f"--context-sub-path={DOCKERFILE_SUBPATH}")
-
-    return KubernetesPodOperator(
-        task_id="build_image",
-        namespace=NAMESPACE,
-        image="gcr.io/kaniko-project/executor:latest",
-        image_pull_policy="Always",
-        # Kaniko executor는 CMD가 아닌 arguments로 제어
-        cmds=[],
-        arguments=kaniko_args,
-        env_vars=kaniko_env_vars,
-        volumes=[registry_volume],
-        volume_mounts=[registry_volume_mount],
-        container_resources=k8s.V1ResourceRequirements(
-            requests={"cpu": "500m", "memory": "1Gi"},
-            limits={"cpu": "1",     "memory": "2Gi"},
-        ),
-        is_delete_operator_pod=True,
-        get_logs=True,
-        log_events_on_failure=True,
-        in_cluster=True,
-        startup_timeout_seconds=600,  # 이미지 빌드는 시간이 걸리므로 여유 있게 설정
-    )
-
-
-# =============================================================================
 # [DAG 정의]
 # =============================================================================
 default_args = {
@@ -379,24 +265,12 @@ with DAG(
     )
 
     # =========================================================================
-    # [태스크 의존성] BUILD_MODE에 따라 파이프라인 구조가 달라짐
-    #
-    # 공통 첫 태스크: ensure_pull_secret (OpenBao → gitea-registry-pull 생성/갱신)
-    #
-    # Option A (kaniko):
-    #   ensure_pull_secret → build_image → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
-    #
-    # Option B (manual):
+    # [태스크 의존성]
     #   ensure_pull_secret → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
+    # 이미지 빌드는 Gitea Actions(.gitea/workflows/build-image.yml)가 처리
     # =========================================================================
     t_ensure_pull_secret = ensure_pull_secret()
-
-    if BUILD_MODE == "kaniko":
-        t_build_image = make_build_image_task()
-        t_ensure_pull_secret >> t_build_image >> [t_load_data, t_load_model]
-    else:
-        t_ensure_pull_secret >> [t_load_data, t_load_model]
-
+    t_ensure_pull_secret >> [t_load_data, t_load_model]
     [t_load_data, t_load_model] >> t_train_model >> t_evaluate_model >> t_log_to_mlflow
 
 
