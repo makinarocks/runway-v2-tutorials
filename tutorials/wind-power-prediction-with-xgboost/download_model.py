@@ -71,7 +71,7 @@ MODEL_REGISTRY_PATH = "/mnt/models"
 # OPENBAO_TOKEN 은 env/CLI 로만 받음 (코드에 하드코딩 금지).
 OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai")
 OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
-OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "rwyt-energy-forecasting/wind-power")
+OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "wind-power")
 OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
 
 

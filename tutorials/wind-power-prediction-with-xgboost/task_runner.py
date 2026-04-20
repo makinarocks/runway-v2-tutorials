@@ -64,8 +64,14 @@ MLFLOW_TRACKING_URI    = os.getenv("MLFLOW_TRACKING_URI", "https://mlflow.v2.mrx
 OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai")
 OPENBAO_TOKEN       = os.getenv("OPENBAO_TOKEN", "")
 OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
-OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "rwyt-energy-forecasting/wind-power")
+OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "wind-power")
 OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
+
+# AWS 키는 step 진입 시점에 초기화 (모듈 import 만으로 OpenBao 호출이 일어나지 않도록).
+# Dockerfile 빌드 시 `python task_runner.py --help` 같이 가볍게 import 해도 실패하지 않고,
+# 단위 테스트 / 로컬 syntax check 시에도 credential 없이 동작한다.
+AWS_ACCESS_KEY_ID: str = ""
+AWS_SECRET_ACCESS_KEY: str = ""
 
 
 def load_secrets() -> dict:
@@ -90,12 +96,12 @@ def load_secrets() -> dict:
     return data
 
 
-# 모듈 로드 시점(=Pod 시작 직후 import 시) 에 1회 호출.
-# 이후 STEP_MAP[args.step]() 이 실행될 때는 이미 전역 변수로 세팅된 AWS 키를 재사용.
-# 덕분에 태스크마다 OpenBao 를 다시 조회하지 않고, 실패 시 step 진입 전에 바로 종료.
-_secrets = load_secrets()
-AWS_ACCESS_KEY_ID     = _secrets["aws_access_key_id"]
-AWS_SECRET_ACCESS_KEY = _secrets["aws_secret_access_key"]
+def _initialize_secrets() -> None:
+    """__main__ 진입 시점에 한 번 호출되어 전역 AWS 키를 채운다."""
+    global AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+    data = load_secrets()
+    AWS_ACCESS_KEY_ID     = data["aws_access_key_id"]
+    AWS_SECRET_ACCESS_KEY = data["aws_secret_access_key"]
 
 # =============================================================================
 # [설정] S3 아티팩트 경로
@@ -433,6 +439,8 @@ if __name__ == "__main__":
         help="실행할 태스크 이름",
     )
     args = parser.parse_args()
+    # OpenBao → AWS 키 로드는 이 시점에 수행한다 (--help 등 parse_args 이전엔 미호출)
+    _initialize_secrets()
     print(f"=== [task_runner] step={args.step}  run_id={DAG_RUN_ID} ===")
     STEP_MAP[args.step]()
     print(f"=== [task_runner] {args.step} 완료 ===")
