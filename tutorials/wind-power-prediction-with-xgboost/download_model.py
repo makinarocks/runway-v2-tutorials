@@ -8,20 +8,21 @@ S3 bucket에서 가장 최근 모델 아티팩트를 다운로드하거나,
 AWS 크레덴셜은 OpenBao에서 런타임에 조회한다. 사전에:
   1. OpenBao 웹 콘솔에서 secret/data/<OPENBAO_SECRET_PATH> 에
      aws_access_key_id, aws_secret_access_key 키로 저장
-  2. 아래 중 하나로 Keycloak offline token 제공:
-     - env var: export RUNWAY_API_KEY="eyJ..."
-     - CLI 옵션: --token "eyJ..."
+  2. OpenBao 콘솔 namespace 로그인 시 자동 발급되는 서비스 토큰을 복사하여
+     아래 중 하나로 제공:
+     - env var: export OPENBAO_TOKEN="hvs...."
+     - CLI 옵션: --openbao-token "hvs...."
 
 사용법:
     # 최신 모델 다운로드 (env var로 토큰 주입)
-    export RUNWAY_API_KEY="eyJ..."
+    export OPENBAO_TOKEN="hvs...."
     python download_model.py
 
     # 특정 model_id 지정
     python download_model.py --model-id m-5d03d4e8d7844c5daa32d9b2ededb9d1
 
     # CLI 옵션으로 토큰 전달
-    python download_model.py --token "eyJ..."
+    python download_model.py --openbao-token "hvs...."
 """
 
 import argparse
@@ -49,21 +50,24 @@ MODEL_REGISTRY_PATH = "/mnt/models"
 
 # OpenBao 설정
 OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai")
+OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
 OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "rwyt-energy-forecasting/wind-power")
-OPENBAO_JWT_ROLE    = os.getenv("OPENBAO_JWT_ROLE", "runway-user")
+OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
 
 
-def load_secrets(runway_api_key: str) -> dict:
-    """Keycloak offline token으로 OpenBao JWT auth → KV v2에서 크레덴셜 조회."""
+def load_secrets(openbao_token: str) -> dict:
+    """OpenBao 서비스 토큰으로 KV v2 시크릿을 조회한다."""
     import hvac
-    client = hvac.Client(url=OPENBAO_URL)
-    client.auth.jwt.jwt_login(role=OPENBAO_JWT_ROLE, jwt=runway_api_key)
+    kwargs = {"url": OPENBAO_URL, "token": openbao_token}
+    if OPENBAO_NAMESPACE:
+        kwargs["namespace"] = OPENBAO_NAMESPACE
+    client = hvac.Client(**kwargs)
     resp = client.secrets.kv.v2.read_secret_version(
         path=OPENBAO_SECRET_PATH,
-        mount_point="secret",
+        mount_point=OPENBAO_KV_MOUNT,
     )
     data = resp["data"]["data"]
-    print(f"[openbao] 크레덴셜 로드 완료: path=secret/{OPENBAO_SECRET_PATH} keys={list(data.keys())}")
+    print(f"[openbao] 크레덴셜 로드 완료: path={OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH} keys={list(data.keys())}")
     return data
 
 
@@ -136,15 +140,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="S3에서 MLflow 모델 아티팩트를 PVC로 다운로드")
     parser.add_argument("--model-id", default=None, help="다운로드할 model ID (예: m-5d03d4e...). 미지정 시 최신 모델")
     parser.add_argument("--list", action="store_true", help="사용 가능한 model ID 목록 출력")
-    parser.add_argument("--token", default=None, help="Runway Keycloak offline token (미지정 시 env RUNWAY_API_KEY 사용)")
+    parser.add_argument("--openbao-token", default=None, help="OpenBao 서비스 토큰 (미지정 시 env OPENBAO_TOKEN 사용)")
     args = parser.parse_args()
 
-    runway_api_key = args.token or os.getenv("RUNWAY_API_KEY")
-    if not runway_api_key:
-        print("[download_model] RUNWAY_API_KEY 가 필요합니다. env 또는 --token 으로 전달하세요.")
+    openbao_token = args.openbao_token or os.getenv("OPENBAO_TOKEN")
+    if not openbao_token:
+        print("[download_model] OPENBAO_TOKEN 이 필요합니다. env 또는 --openbao-token 으로 전달하세요.")
         exit(1)
 
-    secrets = load_secrets(runway_api_key)
+    secrets = load_secrets(openbao_token)
     s3 = get_s3_client(secrets)
 
     if args.list:

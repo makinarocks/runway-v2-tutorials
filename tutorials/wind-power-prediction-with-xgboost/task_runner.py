@@ -25,8 +25,8 @@ import tempfile
 
 # =============================================================================
 # [설정] 크레덴셜 & MLflow 설정
-# - RUNWAY_API_KEY: KubernetesPodOperator의 env_vars로 Pod 시작 시 주입됨
-#   → OpenBao 인증(JWT auth)에 사용되는 Keycloak offline token
+# - RUNWAY_API_KEY: Keycloak offline token → MLflow 인증용
+# - OPENBAO_TOKEN: OpenBao 웹 콘솔에서 발급받은 서비스 토큰 → 시크릿 조회용
 # - AWS 키: OpenBao에서 런타임에 조회 (load_secrets() 참고)
 # =============================================================================
 RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY", "")
@@ -38,24 +38,30 @@ MLFLOW_TRACKING_URI    = os.getenv("MLFLOW_TRACKING_URI", "https://mlflow.v2.mrx
 # [설정] OpenBao
 # - 시크릿 등록: OpenBao 웹 콘솔에서 KV v2로 수동 등록
 #     secret/data/<OPENBAO_SECRET_PATH> 에 aws_access_key_id, aws_secret_access_key 키 저장
-# - 인증: Keycloak offline token(RUNWAY_API_KEY)으로 JWT auth 로그인
+# - 인증: OpenBao 콘솔에서 namespace 로그인 시 자동 발급되는 서비스 토큰 사용
+#   (Keycloak offline token과 별개, X-Vault-Token 헤더로 직접 호출)
+# - namespace(ns path)를 사용하는 multi-tenant 구성이면 OPENBAO_NAMESPACE 지정
 # =============================================================================
 OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai")
+OPENBAO_TOKEN       = os.getenv("OPENBAO_TOKEN", "")
+OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
 OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "rwyt-energy-forecasting/wind-power")
-OPENBAO_JWT_ROLE    = os.getenv("OPENBAO_JWT_ROLE", "runway-user")
+OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
 
 
 def load_secrets() -> dict:
-    """Keycloak offline token으로 OpenBao JWT auth → KV v2에서 크레덴셜 조회."""
+    """OpenBao 서비스 토큰으로 KV v2 시크릿을 조회한다."""
     import hvac
-    client = hvac.Client(url=OPENBAO_URL)
-    client.auth.jwt.jwt_login(role=OPENBAO_JWT_ROLE, jwt=RUNWAY_API_KEY)
+    kwargs = {"url": OPENBAO_URL, "token": OPENBAO_TOKEN}
+    if OPENBAO_NAMESPACE:
+        kwargs["namespace"] = OPENBAO_NAMESPACE
+    client = hvac.Client(**kwargs)
     resp = client.secrets.kv.v2.read_secret_version(
         path=OPENBAO_SECRET_PATH,
-        mount_point="secret",
+        mount_point=OPENBAO_KV_MOUNT,
     )
     data = resp["data"]["data"]
-    print(f"[openbao] 크레덴셜 로드 완료: path=secret/{OPENBAO_SECRET_PATH} keys={list(data.keys())}")
+    print(f"[openbao] 크레덴셜 로드 완료: path={OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH} keys={list(data.keys())}")
     return data
 
 

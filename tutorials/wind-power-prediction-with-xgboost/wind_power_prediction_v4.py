@@ -83,7 +83,7 @@ DOCKERFILE_SUBPATH = ""  # Dockerfile이 저장소 루트에 위치하므로 빈
 
 # ── Runway / MLflow 크레덴셜 ───────────────────────────────────────────────────
 # - RUNWAY_API_KEY: Keycloak offline token (Runway UI > 사용자 설정 > API 토큰에서 발급)
-#   MLflow 인증 + OpenBao JWT auth 부트스트랩 자격증명으로 사용된다.
+#   MLflow 인증 토큰으로 사용된다.
 # - AWS 키: OpenBao에 등록 (코드 내 하드코딩 없음)
 #   task_runner.py / download_model.py 가 런타임에 OpenBao에서 조회
 RUNWAY_API_KEY        = "eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJkZjVhOWNhNy00NmEzLTQ4YWUtODk2MS01NGEyYTdmMDgzMDAifQ.eyJpYXQiOjE3NzY0MDM1ODAsImp0aSI6ImI3OTlkNmI1LTdjZWUtZWQ2MS05MGI1LWEzNDViZGE2Yzk3OCIsImlzcyI6Imh0dHBzOi8va2V5Y2xvYWsudjIubXJ4cnVud2F5LmFpL3JlYWxtcy9ydW53YXkiLCJhdWQiOiJodHRwczovL2tleWNsb2FrLnYyLm1yeHJ1bndheS5haS9yZWFsbXMvcnVud2F5Iiwic3ViIjoiMGY5Y2QzZmYtMzdiYS00NWNlLWE3ZDItMzIzYTMyYmExNmU1IiwidHlwIjoiT2ZmbGluZSIsImF6cCI6InJ1bndheSIsInNpZCI6IjgxYTBjYTAwLTBhMDMtNGYxNi05M2NhLWRkMjc2YmUwYTgyYiIsInNjb3BlIjoib3BlbmlkIHdlYi1vcmlnaW5zIG9mZmxpbmVfYWNjZXNzIHNlcnZpY2VfYWNjb3VudCBlbWFpbCBwcm9maWxlIn0.XNT9kvg3PTHPq1vrPSEUqOnJehZ-HtpSlWo8Lzyxiv7qWZ6MdLNHw_5W0QIRIczH1kiSLkWeLfnHXAK9-BvoPQ"
@@ -92,11 +92,15 @@ MLFLOW_TRACKING_URI    = "https://mlflow.v2.mrxrunway.ai"
 MLFLOW_S3_ENDPOINT_URL = "https://s3.v2.mrxrunway.ai"
 
 # ── OpenBao 설정 ────────────────────────────────────────────────────────────────
-# OpenBao 웹 콘솔에서 KV v2로 시크릿 등록:
-#   secret/data/<OPENBAO_SECRET_PATH> → { aws_access_key_id, aws_secret_access_key }
+# 1) OpenBao 웹 콘솔에서 KV v2로 시크릿 등록:
+#      secret/data/<OPENBAO_SECRET_PATH> → { aws_access_key_id, aws_secret_access_key }
+# 2) OpenBao 콘솔에 namespace path로 로그인 → 자동 발급되는 서비스 토큰을 복사하여
+#    OPENBAO_TOKEN 에 입력 (만료 시 갱신 필요)
 OPENBAO_URL         = "https://openbao.v2.mrxrunway.ai"
-OPENBAO_SECRET_PATH = "rwyt-energy-forecasting/wind-power"
-OPENBAO_JWT_ROLE    = "runway-user"
+OPENBAO_NAMESPACE   = "rwyt-energy-forecasting"
+OPENBAO_TOKEN       = "s.F6DrHBKlEENqMQvAAoBKjpJ8.detel9"
+OPENBAO_SECRET_PATH = "wind-power"
+OPENBAO_KV_MOUNT    = "secret"
 
 
 # =============================================================================
@@ -112,8 +116,10 @@ common_env_vars = [
     k8s.V1EnvVar(name="S3_BUCKET",              value=S3_BUCKET),
     k8s.V1EnvVar(name="DAG_RUN_ID",             value="{{ run_id }}"),
     k8s.V1EnvVar(name="OPENBAO_URL",            value=OPENBAO_URL),
+    k8s.V1EnvVar(name="OPENBAO_NAMESPACE",      value=OPENBAO_NAMESPACE),
+    k8s.V1EnvVar(name="OPENBAO_TOKEN",          value=OPENBAO_TOKEN),
     k8s.V1EnvVar(name="OPENBAO_SECRET_PATH",    value=OPENBAO_SECRET_PATH),
-    k8s.V1EnvVar(name="OPENBAO_JWT_ROLE",       value=OPENBAO_JWT_ROLE),
+    k8s.V1EnvVar(name="OPENBAO_KV_MOUNT",       value=OPENBAO_KV_MOUNT),
 ]
 
 
