@@ -123,6 +123,75 @@ common_env_vars = [
 ]
 
 
+# =============================================================================
+# [초기화 태스크] imagePullSecret 자동 생성
+# - Runway 환경에서 namespace 내 시크릿이 주기적으로 사라지는 현상이 관측됨
+# - 매 DAG 실행 전에 OpenBao의 gitea_username/gitea_password 로 dockerconfigjson
+#   타입 K8s Secret(`gitea-registry-pull`)을 create_or_update 한다
+# - Airflow scheduler SA 의 edit 권한(runway-applications:airflow-scheduler →
+#   rwyt-energy-forecasting) 으로 K8s API 호출
+# - 사전 준비: OpenBao KV 에 gitea_username, gitea_password 추가 등록
+# =============================================================================
+@task
+def ensure_pull_secret() -> None:
+    """OpenBao 에서 Gitea 자격증명을 읽어와 imagePullSecret 을 생성/갱신한다."""
+    import base64
+    import json
+    import ssl
+    import urllib.request
+
+    from kubernetes import client, config
+
+    # 1. OpenBao 에서 Gitea 자격증명 조회
+    vault_url = f"{OPENBAO_URL}/v1/{OPENBAO_KV_MOUNT}/data/{OPENBAO_SECRET_PATH}"
+    req = urllib.request.Request(
+        vault_url,
+        headers={
+            "X-Vault-Token": OPENBAO_TOKEN,
+            "X-Vault-Namespace": OPENBAO_NAMESPACE,
+        },
+    )
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with urllib.request.urlopen(req, context=ctx) as r:
+        body = json.loads(r.read())
+    secrets = body["data"]["data"]
+    gitea_username = secrets["gitea_username"]
+    gitea_password = secrets["gitea_password"]
+    print("[ensure_pull_secret] OpenBao 에서 Gitea 자격증명 조회 완료")
+
+    # 2. dockerconfigjson 구성
+    auth_b64 = base64.b64encode(f"{gitea_username}:{gitea_password}".encode()).decode()
+    docker_config = {
+        "auths": {
+            "gitea.v2.mrxrunway.ai": {
+                "username": gitea_username,
+                "password": gitea_password,
+                "auth": auth_b64,
+            }
+        }
+    }
+    docker_config_b64 = base64.b64encode(json.dumps(docker_config).encode()).decode()
+
+    # 3. K8s Secret create_or_update (Airflow scheduler in-cluster SA 사용)
+    config.load_incluster_config()
+    v1 = client.CoreV1Api()
+    secret_body = client.V1Secret(
+        metadata=client.V1ObjectMeta(name=IMAGE_PULL_SECRET, namespace=NAMESPACE),
+        type="kubernetes.io/dockerconfigjson",
+        data={".dockerconfigjson": docker_config_b64},
+    )
+    try:
+        v1.read_namespaced_secret(name=IMAGE_PULL_SECRET, namespace=NAMESPACE)
+        v1.patch_namespaced_secret(name=IMAGE_PULL_SECRET, namespace=NAMESPACE, body=secret_body)
+        print(f"[ensure_pull_secret] 기존 Secret 갱신: {NAMESPACE}/{IMAGE_PULL_SECRET}")
+    except client.exceptions.ApiException as e:
+        if e.status == 404:
+            v1.create_namespaced_secret(namespace=NAMESPACE, body=secret_body)
+            print(f"[ensure_pull_secret] 신규 Secret 생성: {NAMESPACE}/{IMAGE_PULL_SECRET}")
+        else:
+            raise
 
 
 def make_pod_operator(
@@ -312,17 +381,21 @@ with DAG(
     # =========================================================================
     # [태스크 의존성] BUILD_MODE에 따라 파이프라인 구조가 달라짐
     #
+    # 공통 첫 태스크: ensure_pull_secret (OpenBao → gitea-registry-pull 생성/갱신)
+    #
     # Option A (kaniko):
-    #   build_image → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
+    #   ensure_pull_secret → build_image → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
     #
     # Option B (manual):
-    #   [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
+    #   ensure_pull_secret → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
     # =========================================================================
+    t_ensure_pull_secret = ensure_pull_secret()
+
     if BUILD_MODE == "kaniko":
         t_build_image = make_build_image_task()
-        t_build_image >> [t_load_data, t_load_model]
+        t_ensure_pull_secret >> t_build_image >> [t_load_data, t_load_model]
     else:
-        pass  # manual: 이미지가 이미 빌드되어 있다고 가정
+        t_ensure_pull_secret >> [t_load_data, t_load_model]
 
     [t_load_data, t_load_model] >> t_train_model >> t_evaluate_model >> t_log_to_mlflow
 
