@@ -25,21 +25,50 @@ import tempfile
 
 # =============================================================================
 # [설정] 크레덴셜 & MLflow 설정
-# - KubernetesPodOperator의 env_vars 파라미터로 Pod 시작 시 주입됨
+# - RUNWAY_API_KEY: KubernetesPodOperator의 env_vars로 Pod 시작 시 주입됨
+#   → OpenBao 인증(JWT auth)에 사용되는 Keycloak offline token
+# - AWS 키: OpenBao에서 런타임에 조회 (load_secrets() 참고)
 # =============================================================================
-RUNWAY_API_KEY        = os.getenv("RUNWAY_API_KEY", "")
-AWS_ACCESS_KEY_ID     = os.getenv("AWS_ACCESS_KEY_ID", "")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY", "")
 
 MLFLOW_S3_ENDPOINT_URL = os.getenv("MLFLOW_S3_ENDPOINT_URL", "https://s3.v2.mrxrunway.ai")
 MLFLOW_TRACKING_URI    = os.getenv("MLFLOW_TRACKING_URI", "https://mlflow.v2.mrxrunway.ai")
+
+# =============================================================================
+# [설정] OpenBao
+# - 시크릿 등록: OpenBao 웹 콘솔에서 KV v2로 수동 등록
+#     secret/data/<OPENBAO_SECRET_PATH> 에 aws_access_key_id, aws_secret_access_key 키 저장
+# - 인증: Keycloak offline token(RUNWAY_API_KEY)으로 JWT auth 로그인
+# =============================================================================
+OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai")
+OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "rwyt-energy-forecasting/wind-power")
+OPENBAO_JWT_ROLE    = os.getenv("OPENBAO_JWT_ROLE", "runway-user")
+
+
+def load_secrets() -> dict:
+    """Keycloak offline token으로 OpenBao JWT auth → KV v2에서 크레덴셜 조회."""
+    import hvac
+    client = hvac.Client(url=OPENBAO_URL)
+    client.auth.jwt.jwt_login(role=OPENBAO_JWT_ROLE, jwt=RUNWAY_API_KEY)
+    resp = client.secrets.kv.v2.read_secret_version(
+        path=OPENBAO_SECRET_PATH,
+        mount_point="secret",
+    )
+    data = resp["data"]["data"]
+    print(f"[openbao] 크레덴셜 로드 완료: path=secret/{OPENBAO_SECRET_PATH} keys={list(data.keys())}")
+    return data
+
+
+_secrets = load_secrets()
+AWS_ACCESS_KEY_ID     = _secrets["aws_access_key_id"]
+AWS_SECRET_ACCESS_KEY = _secrets["aws_secret_access_key"]
 
 # =============================================================================
 # [설정] S3 아티팩트 경로
 # - DAG_RUN_ID: KubernetesPodOperator env_vars의 {{ run_id }} 템플릿으로 주입
 # - 동일 DAG run의 모든 Pod가 같은 prefix 아래 아티팩트를 공유한다
 # =============================================================================
-S3_BUCKET  = os.getenv("S3_BUCKET", "exam2011-ef-02")
+S3_BUCKET  = os.getenv("S3_BUCKET", "rwyt-energy-forecasting")
 DAG_RUN_ID = os.getenv("DAG_RUN_ID", "local")
 S3_PREFIX  = f"wind-power/dag-runs/{DAG_RUN_ID}"
 
@@ -63,8 +92,8 @@ XGB_PARAMS = {
     "objective": "reg:squarederror",
 }
 
-EXPERIMENT_NAME = "tutorial-ml-workflow.wind-power-prediction"
-MODEL_NAME      = "tutorial-ml-workflow.wind-power-xgboost"
+EXPERIMENT_NAME = "rwyt-energy-forecasting.wind-power-prediction"
+MODEL_NAME      = "rwyt-energy-forecasting.wind-power-xgboost"
 
 
 # =============================================================================

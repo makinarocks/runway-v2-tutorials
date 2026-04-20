@@ -6,3 +6,5 @@ apache-airflow
 requests
 boto3
 # S3 artifact sharing for inter-task communication
+hvac
+# OpenBao (Vault-compatible) client for secret retrieval

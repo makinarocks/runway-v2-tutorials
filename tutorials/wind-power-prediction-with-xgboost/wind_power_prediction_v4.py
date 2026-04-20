@@ -82,35 +82,38 @@ GIT_BRANCH         = "main"
 DOCKERFILE_SUBPATH = ""  # Dockerfile이 저장소 루트에 위치하므로 빈 문자열
 
 # ── Runway / MLflow 크레덴셜 ───────────────────────────────────────────────────
-# Runway UI > 사용자 설정 > API 토큰에서 발급
-# 프로덕션 환경에서는 Kubernetes Secret 사용 권장:
-#   kubectl create secret generic wind-power-secret \
-#     --from-literal=RUNWAY_API_KEY=<token> \
-#     --from-literal=AWS_ACCESS_KEY_ID=<key> \
-#     --from-literal=AWS_SECRET_ACCESS_KEY=<secret>
-#   그 후 아래 common_env_vars 대신:
-#     env_from=[k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="wind-power-secret"))]
-RUNWAY_API_KEY        = "eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJkZjVhOWNhNy00NmEzLTQ4YWUtODk2MS01NGEyYTdmMDgzMDAifQ.eyJpYXQiOjE3NzQxOTk2NzMsImp0aSI6ImMxMDdjYzY2LTdlNzctMGFhMC1iM2I0LTY2Y2ZhOGYzMGM1NCIsImlzcyI6Imh0dHBzOi8va2V5Y2xvYWsudjIubXJ4cnVud2F5LmFpL3JlYWxtcy9ydW53YXkiLCJhdWQiOiJodHRwczovL2tleWNsb2FrLnYyLm1yeHJ1bndheS5haS9yZWFsbXMvcnVud2F5IiwidHlwIjoiT2ZmbGluZSIsImF6cCI6Im1sZmxvdyIsInNpZCI6ImIzYWE4ZjM1LTAzYzUtNGVjOS1hNzI4LWUwNjI3ZjliZWM3OSIsInNjb3BlIjoib3BlbmlkIHdlYi1vcmlnaW5zIG9mZmxpbmVfYWNjZXNzIHNlcnZpY2VfYWNjb3VudCBlbWFpbCBwcm9maWxlIn0.mLzGj4-337W3ImqWZ6_DZVB80iwPXYGZTOU_-Dfsu3vWQr8gCZCH-svqEUa6uqtPqQtFmbKmc4e1FaCqpuihAQ"
-AWS_ACCESS_KEY_ID     = "0F9CD3FF-37B-47E064A6E18E37"
-AWS_SECRET_ACCESS_KEY = "pPWjNwymzm4B52d3PrnHjR5NPaOnMYY_f2y1c22gNwU"
+# - RUNWAY_API_KEY: Keycloak offline token (Runway UI > 사용자 설정 > API 토큰에서 발급)
+#   MLflow 인증 + OpenBao JWT auth 부트스트랩 자격증명으로 사용된다.
+# - AWS 키: OpenBao에 등록 (코드 내 하드코딩 없음)
+#   task_runner.py / download_model.py 가 런타임에 OpenBao에서 조회
+RUNWAY_API_KEY        = "eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJkZjVhOWNhNy00NmEzLTQ4YWUtODk2MS01NGEyYTdmMDgzMDAifQ.eyJpYXQiOjE3NzY0MDM1ODAsImp0aSI6ImI3OTlkNmI1LTdjZWUtZWQ2MS05MGI1LWEzNDViZGE2Yzk3OCIsImlzcyI6Imh0dHBzOi8va2V5Y2xvYWsudjIubXJ4cnVud2F5LmFpL3JlYWxtcy9ydW53YXkiLCJhdWQiOiJodHRwczovL2tleWNsb2FrLnYyLm1yeHJ1bndheS5haS9yZWFsbXMvcnVud2F5Iiwic3ViIjoiMGY5Y2QzZmYtMzdiYS00NWNlLWE3ZDItMzIzYTMyYmExNmU1IiwidHlwIjoiT2ZmbGluZSIsImF6cCI6InJ1bndheSIsInNpZCI6IjgxYTBjYTAwLTBhMDMtNGYxNi05M2NhLWRkMjc2YmUwYTgyYiIsInNjb3BlIjoib3BlbmlkIHdlYi1vcmlnaW5zIG9mZmxpbmVfYWNjZXNzIHNlcnZpY2VfYWNjb3VudCBlbWFpbCBwcm9maWxlIn0.XNT9kvg3PTHPq1vrPSEUqOnJehZ-HtpSlWo8Lzyxiv7qWZ6MdLNHw_5W0QIRIczH1kiSLkWeLfnHXAK9-BvoPQ"
 
 MLFLOW_TRACKING_URI    = "https://mlflow.v2.mrxrunway.ai"
 MLFLOW_S3_ENDPOINT_URL = "https://s3.v2.mrxrunway.ai"
+
+# ── OpenBao 설정 ────────────────────────────────────────────────────────────────
+# OpenBao 웹 콘솔에서 KV v2로 시크릿 등록:
+#   secret/data/<OPENBAO_SECRET_PATH> → { aws_access_key_id, aws_secret_access_key }
+OPENBAO_URL         = "https://openbao.v2.mrxrunway.ai"
+OPENBAO_SECRET_PATH = "rwyt-energy-forecasting/wind-power"
+OPENBAO_JWT_ROLE    = "runway-user"
 
 
 # =============================================================================
 # [환경 변수] 모든 ML Pod에 공통으로 주입되는 환경변수
 # - task_runner.py가 os.getenv()로 읽어 사용
 # - DAG_RUN_ID: Airflow 템플릿 {{ run_id }}로 각 DAG run마다 고유한 S3 prefix 생성
+# - AWS 키는 Pod 내부에서 OpenBao 조회로 대체 (env로 주입하지 않음)
 # =============================================================================
 common_env_vars = [
     k8s.V1EnvVar(name="RUNWAY_API_KEY",        value=RUNWAY_API_KEY),
-    k8s.V1EnvVar(name="AWS_ACCESS_KEY_ID",      value=AWS_ACCESS_KEY_ID),
-    k8s.V1EnvVar(name="AWS_SECRET_ACCESS_KEY",  value=AWS_SECRET_ACCESS_KEY),
     k8s.V1EnvVar(name="MLFLOW_TRACKING_URI",    value=MLFLOW_TRACKING_URI),
     k8s.V1EnvVar(name="MLFLOW_S3_ENDPOINT_URL", value=MLFLOW_S3_ENDPOINT_URL),
     k8s.V1EnvVar(name="S3_BUCKET",              value=S3_BUCKET),
     k8s.V1EnvVar(name="DAG_RUN_ID",             value="{{ run_id }}"),
+    k8s.V1EnvVar(name="OPENBAO_URL",            value=OPENBAO_URL),
+    k8s.V1EnvVar(name="OPENBAO_SECRET_PATH",    value=OPENBAO_SECRET_PATH),
+    k8s.V1EnvVar(name="OPENBAO_JWT_ROLE",       value=OPENBAO_JWT_ROLE),
 ]
 
 
