@@ -34,12 +34,15 @@ v1(PythonOperator) 대비 핵심 변경:
      (runway-applications:airflow-scheduler SA 에 edit 권한 부여)
   2. OpenBao KV v2 에 시크릿 등록
      namespace=<project-id>, mount=secret, path=wind-power
-     { aws_access_key_id, aws_secret_access_key, gitea_username, gitea_password }
-  3. 아래 [사용자 설정] 섹션의 상수를 환경에 맞게 수정
+     { aws_access_key_id, aws_secret_access_key,
+       gitea_username, gitea_password,
+       runway_api_key }
+  3. 아래 [사용자 설정] 섹션의 **2줄만** 본인 값으로 수정
 
 ⚠️ 보안 주의:
-  이 파일에는 RUNWAY_API_KEY 와 OPENBAO_TOKEN 이 평문 하드코딩되어 있다.
-  튜토리얼 편의를 위한 선택이며, 다음을 반드시 지킬 것:
+  이 파일에는 OPENBAO_TOKEN 이 평문 하드코딩되어 있다 (튜토리얼 편의용).
+  RUNWAY_API_KEY 는 더 이상 코드에 없음 — OpenBao 에서 런타임 조회.
+  다음을 반드시 지킬 것:
     - 이 저장소를 **Private 으로 유지** (public 전환 시 즉시 토큰이 노출됨)
     - fork 하거나 다른 프로젝트로 이식할 때 상수 값을 **반드시 본인 값으로 교체**
     - 프로덕션 환경에서는 Gitea Actions Secrets / OpenBao + K8s Secret (env_from)
@@ -57,79 +60,59 @@ from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperato
 from kubernetes.client import models as k8s
 
 # =============================================================================
-# [사용자 설정] 환경에 맞게 반드시 수정
-# 이 섹션의 값들은 Runway 프로젝트/계정마다 달라진다. 다른 프로젝트로 이식할 때는
-# 이 섹션과 task_runner.py 의 EXPERIMENT_NAME / MODEL_NAME 두 곳만 수정하면 된다.
+# [사용자 설정] ⚠️ 이 **두 줄만** 본인 값으로 수정하면 됩니다.
+#
+# RUNWAY_PROJECT_ID 는 Runway 프로젝트 식별자다. Runway 규약상 아래가 모두 동일:
+#   - K8s namespace, S3 bucket, OpenBao namespace, Gitea 조직명
+# 따라서 이 하나의 값으로 NAMESPACE / IMAGE / S3 / OpenBao 경로가 전부 파생된다.
+#
+# OPENBAO_TOKEN 은 콘솔 namespace 로그인 시 자동 발급되는 서비스 토큰.
+# 이 토큰 하나로 AWS 키 / Gitea 자격증명 / runway_api_key 를 모두 OpenBao 에서 조회.
 # =============================================================================
+RUNWAY_PROJECT_ID = "rwyt-energy-forecasting"
+OPENBAO_TOKEN     = "s.F6DrHBKlEENqMQvAAoBKjpJ8.detel9"
 
-# ── K8s 공통 설정 ───────────────────────────────────────────────────────────────
-# NAMESPACE : Runway 프로젝트 이름(=K8s namespace, =S3 bucket 이름과 동일). ML 태스크 Pod 가 여기에 생성됨
-# IMAGE     : task_runner.py 가 담긴 Docker 이미지. Gitea Actions 가 빌드/푸시. 매 실행마다 최신 :latest pull
-# S3_BUCKET : 태스크 간 중간 파일 공유용 MinIO bucket. Runway 프로젝트 이름과 동일 (자동 프로비저닝됨)
-# IMAGE_PULL_SECRET : Gitea Container Registry 에서 이미지 pull 시 사용할 K8s Secret 이름
-#                    ensure_pull_secret 태스크가 매 DAG 실행 전에 자동으로 생성/갱신한다
-NAMESPACE          = "rwyt-energy-forecasting"
-IMAGE              = "gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest"
-S3_BUCKET          = "rwyt-energy-forecasting"
-IMAGE_PULL_SECRET  = "gitea-registry-pull"
 
-# ── Runway / MLflow 크레덴셜 ───────────────────────────────────────────────────
-# RUNWAY_API_KEY 는 Keycloak offline token 이다. 발급: Runway UI > 사용자 설정 > API 토큰.
-# 두 곳에서 사용됨:
-#   1) MLflow 인증 — MLFLOW_TRACKING_TOKEN 으로 바로 사용 (MLflow 서버가 offline token 을 직접 검증)
-#   2) ──────────── (이전에는 OpenBao JWT 로그인에도 사용했으나 현재는 OPENBAO_TOKEN 로 분리됨)
-# 주의: 같은 사용자가 새로 로그인해 offline token 을 재발급하면 이전 토큰은 **세션 무효화**된다.
-#       "Failed to validate offline token" 에러가 나면 UI 에서 새 토큰 발급 후 이 값 교체.
-# AWS 키는 여기에 없다 → OpenBao 로 분리됨 (아래 참조)
-RUNWAY_API_KEY        = "eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJkZjVhOWNhNy00NmEzLTQ4YWUtODk2MS01NGEyYTdmMDgzMDAifQ.eyJpYXQiOjE3NzY0MDM1ODAsImp0aSI6ImI3OTlkNmI1LTdjZWUtZWQ2MS05MGI1LWEzNDViZGE2Yzk3OCIsImlzcyI6Imh0dHBzOi8va2V5Y2xvYWsudjIubXJ4cnVud2F5LmFpL3JlYWxtcy9ydW53YXkiLCJhdWQiOiJodHRwczovL2tleWNsb2FrLnYyLm1yeHJ1bndheS5haS9yZWFsbXMvcnVud2F5Iiwic3ViIjoiMGY5Y2QzZmYtMzdiYS00NWNlLWE3ZDItMzIzYTMyYmExNmU1IiwidHlwIjoiT2ZmbGluZSIsImF6cCI6InJ1bndheSIsInNpZCI6IjgxYTBjYTAwLTBhMDMtNGYxNi05M2NhLWRkMjc2YmUwYTgyYiIsInNjb3BlIjoib3BlbmlkIHdlYi1vcmlnaW5zIG9mZmxpbmVfYWNjZXNzIHNlcnZpY2VfYWNjb3VudCBlbWFpbCBwcm9maWxlIn0.XNT9kvg3PTHPq1vrPSEUqOnJehZ-HtpSlWo8Lzyxiv7qWZ6MdLNHw_5W0QIRIczH1kiSLkWeLfnHXAK9-BvoPQ"
-
-MLFLOW_TRACKING_URI    = "https://mlflow.v2.mrxrunway.ai"
-MLFLOW_S3_ENDPOINT_URL = "https://s3.v2.mrxrunway.ai"
-
-# ── OpenBao 설정 ────────────────────────────────────────────────────────────────
-# OpenBao (Vault 호환) 는 Runway 가 제공하는 시크릿 저장소다. AWS 키와 Gitea 자격증명을
-# 여기에 저장해두고 런타임에 조회한다. 코드에 민감한 값을 직접 커밋하지 않기 위함.
+# =============================================================================
+# [파생값] PROJECT_ID 와 Runway 인프라 규약으로부터 자동 계산 (수정 불필요)
 #
-# OPENBAO_TOKEN 은 KV 조회용 서비스 토큰. 발급 방법:
-#   OpenBao 콘솔 → 우측 상단에서 namespace path 로 로그인 → 자동으로 발급되는 토큰을 복사
-#   (만료되면 재로그인해서 새 토큰으로 갱신 필요)
-#
-# 사전 등록 필요한 시크릿 (OpenBao 콘솔 > <OPENBAO_NAMESPACE> > Secret Engines > KV v2(secret/) > wind-power):
-#   aws_access_key_id        (task_runner / download_model 이 S3 접근 시 사용)
-#   aws_secret_access_key
-#   gitea_username           (ensure_pull_secret 이 dockerconfigjson 구성 시 사용)
-#   gitea_password
-OPENBAO_URL         = "https://openbao.v2.mrxrunway.ai"
-OPENBAO_NAMESPACE   = "rwyt-energy-forecasting"       # Runway 프로젝트 이름과 동일 (소문자)
-OPENBAO_TOKEN       = "s.F6DrHBKlEENqMQvAAoBKjpJ8.detel9"
-OPENBAO_SECRET_PATH = "wind-power"                    # namespace 내부 상대 경로 (prefix 중복 불필요)
-OPENBAO_KV_MOUNT    = "secret"                        # KV v2 엔진 mount path (기본 "secret")
-OPENBAO_VERIFY_TLS  = "true"                          # 공식 CA 인증서 환경 기준. 자체 서명이면 "false"
+# 본인 프로젝트가 아래 규약과 다른 경우(드묾)에만 개별 값을 편집.
+# task_runner.py 의 config.py 도 같은 규약으로 값을 파생하므로 여기만 바꿔도
+# 전체 파이프라인이 정합하게 동작한다.
+# =============================================================================
+NAMESPACE            = RUNWAY_PROJECT_ID
+IMAGE                = f"gitea.v2.mrxrunway.ai/{RUNWAY_PROJECT_ID}/wind-power-prediction:latest"
+IMAGE_PULL_SECRET    = "gitea-registry-pull"
+
+OPENBAO_URL          = "https://openbao.v2.mrxrunway.ai"
+OPENBAO_NAMESPACE    = RUNWAY_PROJECT_ID
+OPENBAO_SECRET_PATH  = "wind-power"
+OPENBAO_KV_MOUNT     = "secret"
+OPENBAO_VERIFY_TLS   = "true"                 # 공식 CA 환경 기준. 자체 서명이면 "false"
 
 
 # =============================================================================
 # [환경 변수] 모든 ML Pod 에 공통으로 주입되는 환경변수
 #
 # KubernetesPodOperator 의 env_vars 파라미터로 Pod 시작 시 주입된다.
-# task_runner.py 안에서 os.getenv("RUNWAY_API_KEY") 등으로 읽어 사용한다.
+# task_runner.py 의 config.py 가 이 env 를 읽어 나머지 파생값(S3_BUCKET,
+# EXPERIMENT_NAME, MODEL_NAME 등)을 자동 계산한다.
 #
-# DAG_RUN_ID : Airflow 템플릿 '{{ run_id }}' 는 DAG 실행 시점에 실제 run_id (예:
-#              'manual__2026-04-21T12:00:00+00:00') 로 치환된다. 이걸 Pod env 로
-#              넘겨 task_runner 가 S3 prefix 를 run 별로 격리하는 데 사용.
-# AWS 키     : 여기 없음. task_runner 안에서 OpenBao 를 직접 조회해서 가져온다.
+# 주입하는 값 (최소 집합):
+#   RUNWAY_PROJECT_ID : config.py 가 이 값으로 S3_BUCKET / EXPERIMENT_NAME /
+#                       MODEL_NAME / OPENBAO_NAMESPACE 등을 파생
+#   OPENBAO_TOKEN     : config.load_secrets() 가 AWS 키 + runway_api_key 조회
+#   OPENBAO_VERIFY_TLS: 자체 서명 환경 대응 override (기본 true)
+#   DAG_RUN_ID        : '{{ run_id }}' 템플릿이 실행 시점에 실제 run_id 로 치환.
+#                       task_runner 가 run 별 S3 prefix 격리에 사용.
+#
+# AWS 키 / RUNWAY_API_KEY 는 여기 없음 — task_runner 가 OpenBao 에서 직접 조회.
 # =============================================================================
 common_env_vars = [
-    k8s.V1EnvVar(name="RUNWAY_API_KEY",        value=RUNWAY_API_KEY),
-    k8s.V1EnvVar(name="MLFLOW_TRACKING_URI",    value=MLFLOW_TRACKING_URI),
-    k8s.V1EnvVar(name="MLFLOW_S3_ENDPOINT_URL", value=MLFLOW_S3_ENDPOINT_URL),
-    k8s.V1EnvVar(name="S3_BUCKET",              value=S3_BUCKET),
-    k8s.V1EnvVar(name="DAG_RUN_ID",             value="{{ run_id }}"),
-    k8s.V1EnvVar(name="OPENBAO_URL",            value=OPENBAO_URL),
-    k8s.V1EnvVar(name="OPENBAO_NAMESPACE",      value=OPENBAO_NAMESPACE),
-    k8s.V1EnvVar(name="OPENBAO_TOKEN",          value=OPENBAO_TOKEN),
-    k8s.V1EnvVar(name="OPENBAO_SECRET_PATH",    value=OPENBAO_SECRET_PATH),
-    k8s.V1EnvVar(name="OPENBAO_KV_MOUNT",       value=OPENBAO_KV_MOUNT),
-    k8s.V1EnvVar(name="OPENBAO_VERIFY_TLS",     value=OPENBAO_VERIFY_TLS),
+    k8s.V1EnvVar(name="RUNWAY_PROJECT_ID",  value=RUNWAY_PROJECT_ID),
+    k8s.V1EnvVar(name="OPENBAO_TOKEN",      value=OPENBAO_TOKEN),
+    k8s.V1EnvVar(name="OPENBAO_VERIFY_TLS", value=OPENBAO_VERIFY_TLS),
+    k8s.V1EnvVar(name="DAG_RUN_ID",         value="{{ run_id }}"),
 ]
 
 
