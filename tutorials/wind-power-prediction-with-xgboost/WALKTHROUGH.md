@@ -485,7 +485,7 @@ python test_inference.py --dry-run
 [test_inference] POST https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/v2/models/wind-power-v1/infer  (verify_tls=True)
 [test_inference] 예측 vs 실제:
      row |      predicted |         actual |    abs_err
-------------------------------------------------------
+-------------------------------------------------------
        0 |       362.1845 |       363.1963 |     1.0118
 ```
 

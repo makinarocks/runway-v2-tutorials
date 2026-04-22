@@ -93,13 +93,18 @@ def build_payload(feature_df: pd.DataFrame, tensor_name: str) -> dict:
 def extract_predictions(resp_json: dict) -> list:
     """응답 JSON 에서 예측값 리스트 꺼내기.
 
-    일반적으로 outputs[0].data 가 shape [n_rows, 1] 의 flat list (n_rows 개).
-    출력 텐서 이름은 모델별로 다를 수 있으므로 첫 번째 output 을 그대로 사용.
+    MLServer 는 shape=[n,1] 을 일반적으로 1D flat list [p1, p2, ...] 로 돌려주지만,
+    일부 설정에서는 nested list [[p1], [p2], ...] 로 내려오기도 한다. 둘 다
+    처리하도록 한 단계 flatten 을 수행한다. 출력 텐서 이름은 모델별로 다를 수
+    있으므로 첫 번째 output 을 그대로 사용.
     """
     outputs = resp_json.get("outputs", [])
     if not outputs:
         raise RuntimeError(f"응답에 outputs 가 비어있음: {resp_json}")
-    return outputs[0].get("data", [])
+    data = outputs[0].get("data", [])
+    if data and isinstance(data[0], list):
+        data = [row[0] for row in data]
+    return data
 
 
 def main():
@@ -126,8 +131,11 @@ def main():
                         help=f"입력 텐서 이름 (기본 {DEFAULT_INPUT_TENSOR})")
     parser.add_argument("--dry-run", action="store_true",
                         help="실제 호출 없이 payload JSON 만 출력")
-    parser.add_argument("--verify-tls", default="true",
-                        help="TLS 검증 (기본 true, 자체 서명 환경에서만 false)")
+    # TLS 검증: OPENBAO_VERIFY_TLS 정책과 동일한 env-over-default 규약.
+    # 추론 엔드포인트와 OpenBao 는 다른 호스트이므로 env 이름은 별도 (INFERENCE_VERIFY_TLS).
+    parser.add_argument("--verify-tls",
+                        default=os.getenv("INFERENCE_VERIFY_TLS", "true"),
+                        help="TLS 검증 (기본 true, 자체 서명 환경에서만 false. env INFERENCE_VERIFY_TLS)")
     args = parser.parse_args()
 
     # ── 1) CSV 로드 + task_runner.py 와 동일한 전처리 ──────────────────────────
@@ -205,17 +213,28 @@ def main():
         sys.exit(1)
 
     # ── 5) 결과 비교 ────────────────────────────────────────────────────────────
-    resp_json = resp.json()
+    # 200 + HTML/텍스트로 내려오는 프록시 케이스도 대비해 JSON 파싱 실패 시 본문 출력
+    try:
+        resp_json = resp.json()
+    except ValueError:
+        print("[test_inference] 응답이 JSON 이 아님:", file=sys.stderr)
+        print(resp.text[:500], file=sys.stderr)
+        sys.exit(1)
+
     preds = extract_predictions(resp_json)
+    if not preds:
+        print(f"[test_inference] 예측 데이터가 비어있음: {resp_json}", file=sys.stderr)
+        sys.exit(1)
 
     print("[test_inference] 예측 vs 실제:")
     print(f"{'row':>8} | {'predicted':>14} | {'actual':>14} | {'abs_err':>10}")
-    print("-" * 54)
+    print("-" * 55)
     errors = []
+    idx_list = list(idx)
     for i, (pred, actual) in enumerate(zip(preds, y_true)):
         err = abs(pred - actual)
         errors.append(err)
-        print(f"{list(idx)[i]:>8} | {pred:>14.4f} | {actual:>14.4f} | {err:>10.4f}")
+        print(f"{idx_list[i]:>8} | {pred:>14.4f} | {actual:>14.4f} | {err:>10.4f}")
 
     if len(errors) > 1:
         mae = sum(errors) / len(errors)
