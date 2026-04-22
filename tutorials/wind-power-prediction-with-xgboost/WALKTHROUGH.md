@@ -216,7 +216,7 @@ git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
 
 # 튜토리얼 소스를 본인 저장소로 복사 (.git 제외)
 cd reference/tutorials/wind-power-prediction-with-xgboost
-cp -r Dockerfile requirements.txt task_runner.py wind_power_prediction_v4.py download_model.py run_dag.sh dataset /mnt/models/wind-power-prediction/
+cp -r Dockerfile requirements.txt task_runner.py wind_power_prediction_v4.py download_model.py test_inference.py run_dag.sh dataset /mnt/models/wind-power-prediction/
 cp -r .gitea /mnt/models/wind-power-prediction/
 
 # (선택) 문서도 함께
@@ -452,25 +452,58 @@ MLServer 는 **KServe V2 Inference Protocol** 을 따르므로 실제 호출 경
 
 3-4 단계의 **Runway API 토큰** (코드의 `RUNWAY_API_KEY`) 을 `Authorization: Bearer` 헤더로 전달. OpenBao 토큰(3-3) 과 다른 토큰입니다.
 
-### 10-3. curl 예시
+### 10-3. 학습 데이터셋으로 추론 테스트 (권장)
 
-입력 피처는 `task_runner.py` 의 전처리 로직과 동일하게, `turbine_data.csv` 의 컬럼에서 `id/datetime/uuid/index/wtg` 를 제외한 나머지를 학습 시 순서대로 사용합니다.
+저장소에 포함된 `test_inference.py` 가 `dataset/turbine_data.csv` 에서 행을 뽑아 `task_runner.py` 와 동일한 전처리(`id/datetime/uuid/index/wtg` 제외)를 수행한 뒤 KServe V2 payload 로 호출하고, 예측값과 실제 `activepower` 값을 나란히 출력합니다.
+
+IDE 터미널에서:
 
 ```bash
-TOKEN="eyJhbGciOi..."                          # 3-4 의 Runway API 토큰
-ENDPOINT="<10-1 UI 에서 복사한 추론 URL>"
-DEPLOYMENT="wind-power-v1"                     # 9-2 에서 만든 모델 배포 ID
+# 저장소 루트에서 실행
+cd ~/workspace/wind-power-prediction
 
-curl -X POST "${ENDPOINT}/v2/models/${DEPLOYMENT}/infer" \
-  -H "Authorization: Bearer ${TOKEN}" \
+# 필요한 값을 환경변수로 (또는 --endpoint / --token CLI 인자로)
+export INFERENCE_ENDPOINT="<10-1 UI 에서 복사한 추론 URL>"
+export DEPLOYMENT_ID="wind-power-v1"       # 9-2 에서 만든 모델 배포 ID
+export RUNWAY_API_KEY="eyJhbGciOi..."      # 3-4 의 Runway API 토큰 (Bearer)
+
+# CSV 첫 행으로 호출
+python test_inference.py
+
+# 랜덤 5개 행을 한 번에 배치 호출 (MAE 자동 계산)
+python test_inference.py --num-rows 5 --random
+
+# 네트워크 호출 없이 payload JSON 만 확인 (스키마 디버깅용)
+python test_inference.py --dry-run
+```
+
+출력 예:
+```
+[test_inference] 전체 행: 10060, 피처 수: 19
+[test_inference] 선택된 행 인덱스: [0]
+[test_inference] payload shape: [1, 19]
+[test_inference] POST https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/v2/models/wind-power-v1/infer  (verify_tls=True)
+[test_inference] 예측 vs 실제:
+     row |      predicted |         actual |    abs_err
+------------------------------------------------------
+       0 |       362.1845 |       363.1963 |     1.0118
+```
+
+### 10-4. curl 로 직접 호출 (옵션 — 내부 페이로드 확인용)
+
+스크립트를 쓰지 않고 페이로드를 직접 보고 싶으면 `python test_inference.py --dry-run` 출력을 복사해 curl 에 붙여넣거나 아래 형태로 보냅니다. 피처 순서는 `task_runner.py` 의 전처리와 동일(`id/datetime/uuid/index/wtg/activepower` 제외)이며 총 **19 개** 입니다.
+
+```bash
+curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
+  -H "Authorization: Bearer ${RUNWAY_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "inputs": [
       {
         "name": "input-0",
-        "shape": [1, N],
+        "shape": [1, 19],
         "datatype": "FP32",
-        "data": [[v1, v2, ..., vN]]
+        "data": [[v1, v2, ..., v19]]
       }
     ]
   }'
@@ -481,17 +514,15 @@ curl -X POST "${ENDPOINT}/v2/models/${DEPLOYMENT}/infer" \
 {
   "model_name": "wind-power-v1",
   "outputs": [
-    { "name": "output-0", "datatype": "FP32", "shape": [1, 1], "data": [1234.56] }
+    { "name": "output-0", "datatype": "FP32", "shape": [1, 1], "data": [362.18] }
   ]
 }
 ```
 
 > **환경별 검증 필요**
 > - 인증 방식 (Bearer / API key header / 무인증)
-> - `input-0` / `output-0` 텐서 이름 (MLServer 가 MLmodel 시그너처에서 자동 추론)
-> - feature 개수 N & 순서
->
-> 400/422 나면 MLServer Pod 로그(엔드포인트 상세 → ArgoCD 링크) 에서 기대하는 입력 스키마 확인.
+> - `input-0` / `output-0` 텐서 이름 — 다르면 `test_inference.py --tensor-name <name>` 으로 재시도
+> - 400/422 나면 MLServer Pod 로그(엔드포인트 상세 → ArgoCD 링크) 에서 기대하는 입력 스키마 확인
 
 ---
 
