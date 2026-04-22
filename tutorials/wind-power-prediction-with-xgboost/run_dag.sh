@@ -8,14 +8,15 @@
 #   1) 아래 API_KEY 값을 본인 Airflow JWT 로 교체 (수명 ~24h, 만료되면 401)
 #   2) bash run_dag.sh
 #
-# API_KEY 획득 방법 (Airflow 3.0 기준):
+# API_KEY 획득 방법 (Airflow 3.0 기준 — 실제 경로는 환경별로 다를 수 있음):
 #   A) /auth/token 엔드포인트 사용:
 #      curl -X POST "https://airflow.v2.mrxrunway.ai/auth/token" \
 #        -H "Content-Type: application/json" \
 #        -d '{"username":"<계정>","password":"<비밀번호>"}'
 #      응답의 access_token 값을 아래 API_KEY 에 붙여넣기
+#      → 실패 시 `/api/v2/auth/login` 등 배포본별 다른 경로일 수 있음
 #   B) 브라우저 DevTools 로 Airflow UI 로그인 후 Network 탭에서
-#      Authorization: Bearer <token> 헤더 값 복사
+#      Authorization: Bearer <token> 헤더 값 복사 (가장 확실)
 #
 # ⚠️ 이 파일에 API_KEY 가 하드코딩되어 있음 — 저장소를 public 으로 전환하지 말 것.
 # 프로덕션 환경에서는 env 파일이나 Secrets Manager 로 분리 권장.
