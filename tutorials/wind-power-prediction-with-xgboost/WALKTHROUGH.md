@@ -100,21 +100,18 @@ Code Server 터미널을 엽니다 (`Terminal > New Terminal` 또는 ``Ctrl+` ``
 ### 3-1. 작업 디렉토리 이동 & git 기본 설정
 
 ```bash
-# 볼륨이 마운트된 경로 (세션이 끊겨도 파일 유지됨)
-cd /mnt/models
+# Code Server 홈 내 개발 디렉토리 (소스 코드 작업 공간)
+cd ~/workspace
 
 # git 사용자 정보 (본인 값으로)
 git config --global user.name  "gyuseon.han"
 git config --global user.email "gyuseon.han@makinarocks.ai"
 
 # 자격증명 캐시: 한 번 입력 후 재사용
-# 주의: `credential.helper store` 는 HOME 디렉토리에 평문 저장함.
-# 세션 보존 범위는 PVC 마운트 경로(/mnt/models) 아래만이므로,
-# HOME(/home/coder)이 PVC 에 있지 않으면 IDE 재시작 시 사라질 수 있음.
-# 영구 보존하려면 아래처럼 /mnt/models 안에 저장하는 편법도 가능:
-#   git config --global credential.helper "store --file=/mnt/models/.git-credentials"
 git config --global credential.helper store
 ```
+
+> **두 경로의 역할 구분** — `~/workspace` 는 소스 코드 개발용 (git clone 대상), `/mnt/models` 는 1단계에서 마운트한 PVC 로 **모델 아티팩트 전용** (8단계 `download_model.py` 출력). 섞지 마세요.
 
 ### 3-2. 파이썬 패키지 설치
 
@@ -196,12 +193,15 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 
 ### 5-1. 빈 저장소 clone
 
-IDE 터미널 (`cd /mnt/models`) 에서:
+IDE 터미널 (`cd ~/workspace`) 에서:
 
 ```bash
+cd ~/workspace
 git clone https://gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction.git
 cd wind-power-prediction
 ```
+
+> `~/workspace` 는 Code Server 의 홈 내 개발 디렉토리입니다. `/mnt/models` PVC 는 **모델 아티팩트 저장 전용** (8단계 `download_model.py` 의 출력 경로) 이며, 소스 코드를 거기에 두면 나중에 볼륨을 모델 배포 Pod 에 마운트할 때 코드가 섞여 혼란이 생깁니다.
 
 > username 에 본인 Gitea 로그인명, password 에 4-2 에서 만든 개인 액세스 토큰 입력. `credential.helper store` 덕분에 이번 한 번만 입력.
 
@@ -211,21 +211,21 @@ cd wind-power-prediction
 
 ```bash
 # 잠시 상위로 이동해서 reference 저장소 clone
-cd /mnt/models
+cd ~/workspace
 git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
 
 # 튜토리얼 소스를 본인 저장소로 복사 (.git 제외)
 cd reference/tutorials/wind-power-prediction-with-xgboost
 cp -r Dockerfile requirements.txt task_runner.py config.py .env.example \
       wind_power_prediction_v4.py download_model.py test_inference.py \
-      run_dag.sh dataset /mnt/models/wind-power-prediction/
-cp -r .gitea /mnt/models/wind-power-prediction/
+      run_dag.sh dataset ~/workspace/wind-power-prediction/
+cp -r .gitea ~/workspace/wind-power-prediction/
 
 # (선택) 문서도 함께
-cp README.md WALKTHROUGH.md /mnt/models/wind-power-prediction/
+cp README.md WALKTHROUGH.md ~/workspace/wind-power-prediction/
 
 # reference 는 삭제 가능
-cd /mnt/models && rm -rf reference
+cd ~/workspace && rm -rf reference
 ```
 
 ### 5-3. 본인 환경 값 설정 — **두 곳만** 수정
@@ -234,10 +234,10 @@ cd /mnt/models && rm -rf reference
 
 #### ① `.env` 생성 (IDE 스크립트용)
 
-VS Code 에서 `/mnt/models/wind-power-prediction/` 워크스페이스를 연 뒤 터미널에서:
+VS Code 에서 `~/workspace/wind-power-prediction/` 워크스페이스를 연 뒤 터미널에서:
 
 ```bash
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 cp .env.example .env
 ```
 
@@ -307,7 +307,7 @@ OpenBao 콘솔(3-3 에서 로그인한 탭) 에서:
 이제 본인 코드를 Gitea 로 올리면 Gitea Actions 가 자동으로 이미지를 빌드하고 DAG 파일을 airflow-dags 로 동기화합니다.
 
 ```bash
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 git add .
 git commit -m "feat: initial wind-power-prediction setup"
 git push origin main
@@ -354,7 +354,7 @@ Airflow UI (`https://airflow.v2.mrxrunway.ai`) → DAG 목록에 `wind_power_pre
 > 또는 브라우저에서 Airflow UI 로그인 후 DevTools → Network 탭에서 API 요청의 `Authorization: Bearer <token>` 헤더를 복사.
 
 ```bash
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 # 에디터에서 run_dag.sh 의 API_KEY 변경 후
 bash run_dag.sh
 ```
@@ -370,7 +370,7 @@ bash run_dag.sh
 IDE 터미널에서:
 
 ```bash
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 
 # 3-3, 3-4 의 토큰이 아직 환경변수에 있는지 확인
 echo $OPENBAO_TOKEN | head -c 10   # 값이 보이면 OK
@@ -475,7 +475,7 @@ IDE 터미널에서:
 
 ```bash
 # 저장소 루트에서 실행
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 
 # .env 파일에 INFERENCE_ENDPOINT 추가 (한 번만)
 #   INFERENCE_ENDPOINT=<10-1 UI 에서 복사한 추론 URL>
