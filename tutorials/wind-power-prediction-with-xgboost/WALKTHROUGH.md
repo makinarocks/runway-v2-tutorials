@@ -93,27 +93,13 @@ httpRoute:
 
 ---
 
-## 3. IDE 개발 환경 초기 설정
+## 3. IDE 기본 환경 설정 — 패키지 & 토큰
 
 Code Server 터미널을 엽니다 (`Terminal > New Terminal` 또는 ``Ctrl+` ``).
 
-### 3-1. 작업 디렉토리 이동 & git 기본 설정
+> git 사용자 정보 / 작업 디렉토리 이동은 5-1 (저장소 clone 직전) 로 묶어뒀습니다 — 이번 단계에선 이후에 계속 쓸 **파이썬 패키지 설치와 토큰 확보**만 합니다.
 
-```bash
-# Code Server 홈 내 개발 디렉토리 (소스 코드 작업 공간)
-cd ~/workspace
-
-# git 사용자 정보 (본인 값으로)
-git config --global user.name  "gyuseon.han"
-git config --global user.email "gyuseon.han@makinarocks.ai"
-
-# 자격증명 캐시: 한 번 입력 후 재사용
-git config --global credential.helper store
-```
-
-> **두 경로의 역할 구분** — `~/workspace` 는 소스 코드 개발용 (git clone 대상), `/mnt/models` 는 1단계에서 마운트한 PVC 로 **모델 아티팩트 전용** (8단계 `download_model.py` 출력). 섞지 마세요.
-
-### 3-2. 파이썬 패키지 설치
+### 3-1. 파이썬 패키지 설치
 
 IDE 안에서 `download_model.py` / 기타 스크립트를 돌리려면:
 
@@ -128,7 +114,7 @@ pip install --user boto3 hvac && export PATH="$HOME/.local/bin:$PATH"
 python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 ```
 
-### 3-3. OpenBao 서비스 토큰 확보 (AWS 키 + runway_api_key 조회용)
+### 3-2. OpenBao 서비스 토큰 확보 (AWS 키 + runway_api_key 조회용)
 
 이 토큰이 **튜토리얼 전체에서 하드코딩되는 유일한 시크릿** 입니다. 이 토큰으로 OpenBao 에 접근해 나머지 시크릿(AWS 키, runway_api_key 등) 을 조회하므로, 다른 시크릿을 코드에 넣지 않아도 됩니다.
 
@@ -155,7 +141,7 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 > # 200 OK / 403 만료·권한없음 / 404 KV 경로 없음 / 401·400 토큰·네임스페이스 형식 오류
 > ```
 
-### 3-4. Runway API 토큰 확보 (MLflow / 추론용)
+### 3-3. Runway API 토큰 확보 (MLflow / 추론용)
 
 **OpenBao 토큰과 별개**입니다. 이 토큰은 DAG 가 MLflow 에 접근할 때, 그리고 추론 endpoint 호출 시 `Authorization: Bearer` 헤더로 사용됩니다. 이 값은 코드에 하드코딩되지 않고 **OpenBao 의 `runway_api_key` 키로 저장** 되어 `task_runner.py` / `test_inference.py` 가 런타임에 조회합니다 (5-4 참조).
 
@@ -204,19 +190,29 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 > - 프로덕션 환경에서는 **Gitea Actions Secrets + OpenBao + K8s Secret** 으로 완전 분리 권장.
 > - 토큰이 유출되었다고 판단되면 즉시 Runway UI / Gitea UI 에서 토큰 revoke 후 재발급 → 저장소 갱신.
 
-### 5-1. 빈 저장소 clone
+### 5-1. git 기본 설정 & 빈 저장소 clone
 
-IDE 터미널 (`cd ~/workspace`) 에서:
+IDE 터미널에서:
 
 ```bash
+# Code Server 홈 내 개발 디렉토리 (소스 코드 작업 공간)
 cd ~/workspace
+
+# git 사용자 정보 (본인 값으로) — 이 세션에서 최초 1회만
+git config --global user.name  "gyuseon.han"
+git config --global user.email "gyuseon.han@makinarocks.ai"
+
+# 자격증명 캐시: username/토큰 한 번 입력 후 재사용
+git config --global credential.helper store
+
+# 4-1 에서 만든 본인 저장소 clone
 git clone https://gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction.git
 cd wind-power-prediction
 ```
 
-> `~/workspace` 는 Code Server 의 홈 내 개발 디렉토리입니다. `/mnt/models` PVC 는 **모델 아티팩트 저장 전용** (8단계 `download_model.py` 의 출력 경로) 이며, 소스 코드를 거기에 두면 나중에 볼륨을 모델 배포 Pod 에 마운트할 때 코드가 섞여 혼란이 생깁니다.
+> **두 경로의 역할 구분** — `~/workspace` 는 소스 코드 개발용 (git clone 대상), `/mnt/models` 는 1단계에서 마운트한 PVC 로 **모델 아티팩트 전용** (8단계 `download_model.py` 출력). 섞지 마세요.
 
-> username 에 본인 Gitea 로그인명, password 에 4-2 에서 만든 개인 액세스 토큰 입력. `credential.helper store` 덕분에 이번 한 번만 입력.
+> clone 시 username 에 본인 Gitea 로그인명, password 에 4-2 에서 만든 개인 액세스 토큰 입력. `credential.helper store` 덕분에 이번 한 번만 입력.
 
 ### 5-2. 참고용 공개 저장소에서 파일 복사
 
@@ -258,7 +254,7 @@ cp .env.example .env
 
 ```dotenv
 RUNWAY_PROJECT_ID=rwyt-energy-forecasting          # 본인 프로젝트 ID
-OPENBAO_TOKEN=<3-3 에서 복사한 OpenBao 서비스 토큰>
+OPENBAO_TOKEN=<3-2 에서 복사한 OpenBao 서비스 토큰>
 
 # 추론 테스트는 9단계(모델 배포) 이후 채움. 지금은 비워둬도 됨.
 INFERENCE_ENDPOINT=
@@ -273,7 +269,7 @@ DEPLOYMENT_ID=wind-power-v1
 
 ```python
 RUNWAY_PROJECT_ID = "rwyt-energy-forecasting"       # ← 본인 프로젝트 ID
-OPENBAO_TOKEN     = "<3-3 의 OpenBao 서비스 토큰>"
+OPENBAO_TOKEN     = "<3-2 의 OpenBao 서비스 토큰>"
 ```
 
 그 아래 [파생값] 섹션은 **수정 불필요** — f-string 으로 `NAMESPACE`, `IMAGE`, `OPENBAO_NAMESPACE` 등이 자동 계산됩니다.
@@ -295,7 +291,7 @@ API_BASE="https://gitea.v2.mrxrunway.ai/api/v1/repos/rwyt-energy-forecasting/air
 
 ### 5-4. OpenBao 에 시크릿 등록
 
-OpenBao 콘솔(3-3 에서 로그인한 탭) 에서:
+OpenBao 콘솔(3-2 에서 로그인한 탭) 에서:
 
 1. 좌측 **Secret Engines** → `secret/` 클릭 → **Create secret +**
 2. **Path**: `wind-power`
@@ -307,7 +303,7 @@ OpenBao 콘솔(3-3 에서 로그인한 탭) 에서:
 | `aws_secret_access_key` | 위 Access Key 의 Secret |
 | `gitea_username` | 4-2 의 `GIT_USERNAME` 과 동일 |
 | `gitea_password` | 4-2 의 `GIT_TOKEN` 과 동일 |
-| `runway_api_key` | 3-4 에서 발급받은 Keycloak offline token |
+| `runway_api_key` | 3-3 에서 발급받은 Keycloak offline token |
 
 > `runway_api_key` 는 MLflow 인증(task_runner) 과 추론 엔드포인트 호출(test_inference) 에서 사용됩니다. 여기 한 곳에만 넣으면 두 스크립트 모두 자동으로 가져다 씁니다.
 >
@@ -385,7 +381,7 @@ IDE 터미널에서:
 ```bash
 cd ~/workspace/wind-power-prediction
 
-# 3-3, 3-4 의 토큰이 아직 환경변수에 있는지 확인
+# 3-2 의 OpenBao 토큰이 아직 환경변수/.env 에 있는지 확인 (3-3 Runway API 토큰은 OpenBao 에 저장됨)
 echo $OPENBAO_TOKEN | head -c 10   # 값이 보이면 OK
 echo $OPENBAO_NAMESPACE            # rwyt-energy-forecasting
 
@@ -591,16 +587,16 @@ curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
 | `git clone` 인증 실패 | username 은 로그인명, password 는 **개인 액세스 토큰** (패스워드 아님). `credential.helper store` 설정 |
 | Gitea Actions 에서 `build-image.yml` 이 실패 | `IMAGE_TAG` Secret 값 확인. Gitea CR 에 같은 경로로 저장됨. 401 이면 `GIT_TOKEN` 의 packages write 권한 확인 |
 | Gitea Actions 에서 `sync-dag.yml` 이 `The target couldn't be found (404)` | `airflow-dags` 저장소가 빈 상태. README 자동 생성으로 초기화했는지 확인 |
-| `ensure_pull_secret` 태스크 `HTTPError: 403 Forbidden` | **`OPENBAO_TOKEN` 만료** (가장 흔한 원인). 3-3 의 "토큰 만료 시 대응" 절차 따라 `.env` + DAG 파일 양쪽 갱신 → push → Airflow 재트리거 |
+| `ensure_pull_secret` 태스크 `HTTPError: 403 Forbidden` | **`OPENBAO_TOKEN` 만료** (가장 흔한 원인). 3-2 의 "토큰 만료 시 대응" 절차 따라 `.env` + DAG 파일 양쪽 갱신 → push → Airflow 재트리거 |
 | `ensure_pull_secret` 태스크 `KeyError: 'gitea_username'` | OpenBao 에 `gitea_username` / `gitea_password` 키 미등록. WALKTHROUGH 5-4 재확인 |
 | `load_data` / `train_model` 등이 `FailedToRetrieveImagePullSecret` | `ensure_pull_secret` 가 만든 Secret 이 사라졌을 수 있음. DAG 재실행 (다음 run 에서 자동 복구) |
-| `log_to_mlflow` 에서 `permission denied` 또는 `Failed to validate offline token` | OpenBao `runway_api_key` 값이 만료됨. OpenBao 콘솔 → 해당 키 값만 새 Runway API 토큰으로 갱신 (3-4 재발급) — DAG/코드 변경 불필요 |
+| `log_to_mlflow` 에서 `permission denied` 또는 `Failed to validate offline token` | OpenBao `runway_api_key` 값이 만료됨. OpenBao 콘솔 → 해당 키 값만 새 Runway API 토큰으로 갱신 (3-3 재발급) — DAG/코드 변경 불필요 |
 | MLflow experiment 생성 `permission denied` | `EXPERIMENT_NAME` 이 `{프로젝트ID}.{실험명}` 규약 위반. `task_runner.py` 수정 |
-| `download_model.py` 에서 `permission denied` (S3) | `OPENBAO_TOKEN` 만료 가능성. 3-3 의 "토큰 만료 시 대응" 참고. `config.py` 가 만료 시 친절한 에러 메시지 출력함 |
+| `download_model.py` 에서 `permission denied` (S3) | `OPENBAO_TOKEN` 만료 가능성. 3-2 의 "토큰 만료 시 대응" 참고. `config.py` 가 만료 시 친절한 에러 메시지 출력함 |
 | `run_dag.sh` 실행 시 `401 Unauthorized` | 스크립트 내 `API_KEY` 가 기본값 (수명 ~24h). 본인 Airflow JWT 로 교체 |
 | 엔드포인트 생성 후 `Unhealthy` / `NotReady` | 모델 경로가 잘못됐거나 PVC 가 비어있음. 추론 엔드포인트 상세 → ArgoCD 링크로 Pod 로그 확인 |
 | 추론 호출 404 | 10-1 의 UI 복사 URL + `/v2/models/<deployment-id>/infer` 조합인지 재확인 |
-| 추론 호출 401/403 | 토큰을 OpenBao 토큰과 혼동했는지 확인. Runway API 토큰 재발급(3-4) |
+| 추론 호출 401/403 | 토큰을 OpenBao 토큰과 혼동했는지 확인. Runway API 토큰 재발급(3-3) |
 | 추론 호출 400/422 | payload 스키마(텐서 이름/shape) 가 모델 시그너처와 불일치. MLServer 로그에서 기대 입력 확인 |
 
 코드 레벨 설명(아키텍처/상수/인증 흐름)은 [README.md](./README.md) 를 참고하세요.
