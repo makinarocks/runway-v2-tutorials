@@ -2,6 +2,8 @@
 
 Runway v2에서 **KubernetesPodOperator 기반 Airflow DAG**로 풍력 터빈 발전량(`activepower`)을 예측하는 XGBoost 모델의 학습 → 평가 → MLflow 등록 → PVC 배포 파이프라인을 구성하는 튜토리얼입니다.
 
+> **처음 시도하시나요?** 🚀 Runway 콘솔 UI 를 조작하며 볼륨 생성 → IDE 배포 → 모델 추론 호출까지 따라할 수 있는 단계별 가이드가 있습니다: **[WALKTHROUGH.md](./WALKTHROUGH.md)**. 본 README 는 구조/참조 문서이고, WALKTHROUGH 는 실행 가이드입니다.
+
 ## 개요
 
 | 항목 | 내용 |
