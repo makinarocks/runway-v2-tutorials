@@ -98,37 +98,67 @@ httpRoute:
 
 Code Server 터미널을 엽니다 (상단 메뉴 `Terminal > New Terminal` 또는 `Ctrl+``).
 
-### 3-1. Gitea 저장소 clone
+### 3-1. Gitea 저장소 clone & 자격증명 저장
 
 ```bash
 cd /mnt/models            # 볼륨이 마운트된 경로 — 여기서 작업하면 파일이 영구 보존됨
+
+# credential helper 를 켜두면 한 번만 입력하고 이후 재사용됨 (/home/coder 도 PVC 에 속함)
+git config --global credential.helper store
+
 git clone https://gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction.git
 cd wind-power-prediction
 ```
 
-> Gitea private 저장소라 username/password 를 물어볼 겁니다. 본인 Gitea 계정 정보를 사용하세요.
+> Gitea private 저장소라 username/password 를 물어봅니다. **username 에 본인 Gitea 계정, password 에 개인 접근 토큰**(패스워드 아님) 을 입력하세요. 2단계 인증을 쓰는 경우 비밀번호는 안 먹을 수 있어요.
 
 ### 3-2. 필요한 파이썬 패키지 설치
 
 Code Server 이미지에는 `pip` 가 있지만 `boto3` / `hvac` 가 없을 수 있습니다:
 
 ```bash
-pip install --user boto3 hvac
+# 시스템 파이썬에 설치 (Code Server 기본 사용자는 root 권한을 가짐)
+pip install boto3 hvac
 ```
 
-### 3-3. OpenBao 서비스 토큰 확보
+권한 오류가 나면 `--user` 옵션 또는 venv 를 사용하세요:
 
-`download_model.py` 는 S3 자격증명을 OpenBao 에서 읽어오므로 **OpenBao 서비스 토큰** 이 필요합니다.
+```bash
+# 대안 1: 사용자 디렉토리에 설치 (PATH 에 ~/.local/bin 포함 필요)
+pip install --user boto3 hvac
+export PATH="$HOME/.local/bin:$PATH"
+
+# 대안 2: venv 사용 (권장)
+python -m venv .venv && source .venv/bin/activate
+pip install boto3 hvac
+```
+
+### 3-3. OpenBao 서비스 토큰 확보 (S3 자격증명용)
+
+`download_model.py` 는 AWS 키를 OpenBao 에서 읽어오므로 **OpenBao 서비스 토큰** 이 필요합니다.
 
 1. 새 브라우저 탭에서 `https://openbao.v2.mrxrunway.ai` 접속
-2. 프로젝트 namespace (`rwyt-energy-forecasting`) 로 로그인하면 자동 발급되는 서비스 토큰을 **Copy token** 으로 복사
+2. 프로젝트 namespace (`rwyt-energy-forecasting`) 로 로그인하면 자동 발급되는 서비스 토큰을 **Copy token** 으로 복사 (콘솔에서 복사한 값 그대로 사용)
 3. IDE 터미널에서 환경변수로 설정:
    ```bash
-   export OPENBAO_TOKEN="s.xxxx..."        # 붙여넣기
+   export OPENBAO_TOKEN="<복사한 값 그대로>"
    export OPENBAO_NAMESPACE="rwyt-energy-forecasting"
    ```
 
 > 토큰은 세션이 끊기면 만료됩니다. 실행 직전에 새로 복사하세요.
+
+### 3-4. Runway API 토큰 확보 (MLflow 및 추론 호출용)
+
+**OpenBao 서비스 토큰과 별개**로, **Runway API 토큰(Keycloak offline token)** 도 필요합니다. 이 토큰은:
+- DAG 가 MLflow 에 접근할 때 사용됩니다 (`wind_power_prediction_v4.py` 의 `RUNWAY_API_KEY` 상수)
+- 7단계 추론 호출 시 `Authorization: Bearer` 헤더 값으로도 사용됩니다
+
+발급 경로:
+1. Runway 콘솔 우측 상단 **프로필 아이콘** (이니셜) 클릭
+2. **API 토큰** 메뉴 (또는 **사용자 설정 > API 토큰**) 진입
+3. **새 토큰 발급** → 복사해서 안전한 곳에 저장
+
+> 이 토큰은 **세션별 offline token** 이라, 같은 사용자가 콘솔에서 새 토큰을 발급받으면 이전 토큰이 무효화됩니다 (README §트러블슈팅 참고). 4단계 이후 재발급했다면 DAG 파일의 `RUNWAY_API_KEY` 상수도 갱신 필요.
 
 ---
 
@@ -145,9 +175,17 @@ pip install --user boto3 hvac
 
 ### 옵션 B — `run_dag.sh` 스크립트
 
+> ⚠️ `run_dag.sh` 상단의 `API_KEY=` 는 **Airflow 전용 JWT** (Keycloak offline token 과 다름, 수명 ~24h) 입니다. 실행 전에 본인의 값으로 교체해야 합니다.
+>
+> - 방법 1: Airflow UI (`https://airflow.v2.mrxrunway.ai`) 로그인 후 브라우저 DevTools → Application → Cookies 또는 Local Storage 에서 JWT 추출
+> - 방법 2: Airflow UI **Security > List Users > Generate Token** (버전에 따라 다름)
+>
+> 교체 없이 실행하면 401 Unauthorized 가 납니다.
+
 IDE 터미널에서:
 ```bash
 cd /mnt/models/wind-power-prediction
+# 파일 편집해서 API_KEY 값 교체 후 실행
 bash run_dag.sh
 ```
 
@@ -253,24 +291,28 @@ Runway 의 "추론 엔드포인트" 는 **한 URL 안에서 여러 모델 배포
 
 ## 7. 추론 호출 테스트
 
-엔드포인트 상세 페이지 우측 **세부 정보** 에서 **추론 URL** 을 복사합니다. 예시:
+### 7-1. 추론 URL 확인 (매우 중요)
+
+**반드시 엔드포인트 상세 페이지 우측 "세부 정보" 섹션의 "추론 URL" 필드 값을 그대로 복사**해서 사용하세요. 환경마다 도메인이 다를 수 있으므로 아래 예시를 그대로 쓰면 404 가 날 수 있습니다.
+
+참고용 형식 (실제 값은 UI 에서 확인):
 ```
-https://inference.v2.mrxrunway.ai/api/rwyt-energy-forecasting/wind-power-prediction
+https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>
 ```
 
-MLServer 는 **KServe V2 Inference Protocol** 을 따르므로 실제 호출 경로는 위 URL 뒤에 `/v2/models/{deployment-id}/infer` 를 붙입니다.
+MLServer 는 **KServe V2 Inference Protocol** 을 따르므로 실제 호출 경로는 **복사한 URL 뒤에** `/v2/models/{deployment-id}/infer` 를 붙입니다 (`{deployment-id}` 는 6-2 에서 지정한 모델 배포 ID, 예시는 `wind-power-v1`).
 
-### 7-1. 인증 토큰 확보
+### 7-2. 인증 토큰
 
-Runway 의 API 토큰(Keycloak offline token, 코드의 `RUNWAY_API_KEY`) 을 `Authorization: Bearer` 헤더로 전달합니다.
+3-4 단계에서 확보한 **Runway API 토큰** (코드의 `RUNWAY_API_KEY`) 을 `Authorization: Bearer` 헤더로 전달합니다. OpenBao 서비스 토큰(3-3) 과 다른 토큰이니 혼동 주의.
 
-### 7-2. 추론 요청 예시
+### 7-3. 추론 요청 예시
 
 turbine_data 컬럼에 맞춰 입력(예: `windspeed`, `winddirection`, `blade_pitch` 등) 을 구성합니다. `task_runner.py` 의 `drop_cols = ["id", "datetime", "uuid", "index", "wtg"]` 를 제외한 피처들이 X 입니다.
 
 ```bash
-TOKEN="eyJhbGciOi..."        # RUNWAY_API_KEY
-ENDPOINT="https://inference.v2.mrxrunway.ai/api/rwyt-energy-forecasting/wind-power-prediction"
+TOKEN="eyJhbGciOi..."        # 3-4 단계의 Runway API 토큰 (RUNWAY_API_KEY 와 동일)
+ENDPOINT="<7-1 UI 에서 복사한 추론 URL>"
 DEPLOYMENT="wind-power-v1"   # 6-2 에서 만든 배포 ID
 
 curl -X POST "${ENDPOINT}/v2/models/${DEPLOYMENT}/infer" \
@@ -335,11 +377,13 @@ curl -X POST "${ENDPOINT}/v2/models/${DEPLOYMENT}/infer" \
 | 증상 | 원인 가능성 & 대응 |
 |---|---|
 | Code Server 가 `Pending` 상태에서 넘어가지 않음 | 스토리지 클래스/access mode 가 클러스터에서 지원 안 됨. 스토리지 목록에서 볼륨 상태가 `Pending` 이면 스토리지 클래스 변경 필요 |
-| IDE 에서 `git clone` 인증 실패 | Gitea username/password 재확인. 토큰을 비밀번호 대신 사용해도 됨 |
-| `download_model.py` 에서 `permission denied` (S3) | `OPENBAO_NAMESPACE` 환경변수 누락 또는 토큰 만료. 다시 복사 |
+| IDE 터미널에서 `/mnt/models` 에 쓰기 실패 (`permission denied`) | PVC 가 root 소유로 마운트됐는데 code-server 가 uid=1000 으로 실행 중. Code Server 배포 values 에 `podSecurityContext.fsGroup: 1000` 이 설정됐는지 확인. 또는 IDE 터미널에서 `sudo chown -R $(id -u):$(id -g) /mnt/models` (sudo 가능한 경우) |
+| IDE 에서 `git clone` 인증 실패 | Gitea username 에는 로그인명, password 란에는 **개인 액세스 토큰** 사용. 재입력이 잦으면 `git config --global credential.helper store` 로 캐시 |
+| `download_model.py` 에서 `permission denied` (S3) | `OPENBAO_NAMESPACE` 환경변수 누락 또는 토큰 만료. 3-3 재수행 |
+| `run_dag.sh` 실행 시 `401 Unauthorized` | 스크립트 내 `API_KEY` 가 기본값으로 남아있음 (수명 ~24h). 본인의 Airflow JWT 로 교체 |
 | 엔드포인트 생성 후 `Unhealthy` / `NotReady` | 모델 경로가 잘못됐거나 PVC 가 비어있음. ArgoCD 링크로 Pod 로그 확인 |
-| 추론 호출 시 404 | path 오타 — `/v2/models/{deployment-id}/infer` 인지 확인 (deployment-id 는 모델 배포의 ID) |
-| 추론 호출 시 401/403 | 토큰 형식/헤더명 재확인. Runway 관리자에게 정확한 인증 방식 문의 |
-| 추론 호출 시 400/422 | payload 스키마(텐서 이름/shape) 가 모델 시그너처와 불일치. MLServer Pod 로그에서 기대하는 입력 스키마 확인 |
+| 추론 호출 시 404 | 7-1 에서 복사한 URL 이 아니라 문서 예시를 그대로 쓴 경우가 잦음. 엔드포인트 상세 UI 의 "추론 URL" 필드 값 + `/v2/models/{deployment-id}/infer` 조합인지 재확인 |
+| 추론 호출 시 401/403 | 토큰 형식/헤더명 재확인. OpenBao 토큰과 혼동했는지 확인 (3-3 vs 3-4). 필요 시 Runway UI 에서 **API 토큰** 재발급 |
+| 추론 호출 시 400/422 | payload 스키마(텐서 이름/shape) 가 모델 시그너처와 불일치. MLServer Pod 로그(ArgoCD 또는 애플리케이션 상세에서 접근) 에서 기대하는 입력 스키마 확인 |
 
 코드 레벨 문제(태스크 실패 등) 는 [README § 트러블슈팅](./README.md#트러블슈팅) 을 참고하세요.
