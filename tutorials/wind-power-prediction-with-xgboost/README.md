@@ -42,6 +42,7 @@ wind-power-prediction-with-xgboost/
 ├── wind_power_prediction_v4.py    # [현행] KubernetesPodOperator 기반 DAG
 ├── task_runner.py                 # Docker 이미지 내 태스크 실행 로직
 ├── download_model.py              # S3 → PVC 모델 아티팩트 복사 (IDE 실행용)
+├── test_inference.py              # 배포된 모델 추론 엔드포인트 호출 테스트 (IDE 실행용)
 ├── run_dag.sh                     # Airflow REST API로 DAG trigger
 ├── .gitea/workflows/
 │   ├── build-image.yml            # task_runner 변경 시 이미지 자동 빌드
