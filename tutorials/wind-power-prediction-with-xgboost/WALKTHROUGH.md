@@ -448,14 +448,22 @@ python download_model.py
 
 ### 10-1. 추론 URL 확인 (중요)
 
-**엔드포인트 상세 페이지 > 세부 정보 > 추론 URL 필드 값을 그대로 복사**해서 사용. 아래 형식은 참고용일 뿐, 실제 도메인은 환경마다 다를 수 있습니다.
-
-형식:
+**엔드포인트 상세 페이지 > 세부 정보 > 요청 URL 을 그대로 복사**해서 사용. 형식:
 ```
-https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>
+https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>/v2/models/default/infer
 ```
 
-MLServer 는 **KServe V2 Inference Protocol** 을 따르므로 실제 호출 경로는 **복사한 URL + `/v2/models/<deployment-id>/infer`** (deployment-id = 9-2 의 `wind-power-v1`).
+- 앞 3 경로 세그먼트 (`<project-id>/<endpoint-id>/<deployment-id>`) = **Runway 라우팅 경로** — UI 에서 본인이 설정한 엔드포인트 ID / 배포 ID 가 반영됨
+- 끝 `/v2/models/default/infer` = **KServe V2 Inference Protocol 경로** — Runway MLServer 는 내부 모델명을 `default` 로 고정
+
+`test_inference.py` 는 이 URL 을 두 부분으로 나눠 사용:
+
+| 환경변수 | 값 |
+|---|---|
+| `INFERENCE_ENDPOINT` | `https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>` (끝의 `/v2/...` 이전까지) |
+| `DEPLOYMENT_ID` | `default` (KServe V2 의 model name, Runway 고정값) |
+
+> ⚠️ **"배포 ID" 가 두 번 등장** — 9-2 에서 만든 배포 ID (예: `wind-power-v1`) 는 URL 3번째 세그먼트로 **이미 INFERENCE_ENDPOINT 에 포함**됩니다. `DEPLOYMENT_ID` 환경변수는 별개의 개념 (KServe 모델명) 이며 Runway 에서는 항상 `default` 입니다.
 
 ### 10-2. 인증 토큰
 
@@ -478,8 +486,8 @@ IDE 터미널에서:
 cd ~/workspace/wind-power-prediction
 
 # .env 파일에 INFERENCE_ENDPOINT 추가 (한 번만)
-#   INFERENCE_ENDPOINT=<10-1 UI 에서 복사한 추론 URL>
-#   DEPLOYMENT_ID=wind-power-v1
+#   INFERENCE_ENDPOINT=<10-1 UI 요청 URL 에서 /v2/models/... 이전까지>
+#   DEPLOYMENT_ID=default            # Runway MLServer 고정값
 
 # CSV 첫 행으로 호출 — 토큰/엔드포인트 자동 로드
 python test_inference.py
@@ -496,7 +504,7 @@ python test_inference.py --dry-run
 [test_inference] 전체 행: 10060, 피처 수: 19
 [test_inference] 선택된 행 인덱스: [0]
 [test_inference] payload shape: [1, 19]
-[test_inference] POST https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/v2/models/wind-power-v1/infer  (verify_tls=True)
+[test_inference] POST https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/<deploy>/v2/models/default/infer  (verify_tls=True)
 [test_inference] 예측 vs 실제:
      row |      predicted |         actual |    abs_err
 -------------------------------------------------------
@@ -511,8 +519,8 @@ curl 은 `.env` 를 직접 읽지 못하므로 `RUNWAY_API_KEY` 는 별도로 ex
 
 ```bash
 export RUNWAY_API_KEY="eyJhbGciOi..."
-export INFERENCE_ENDPOINT="https://inference.v2.mrxrunway.ai/api/<proj>/<ep>"
-export DEPLOYMENT_ID="wind-power-v1"
+export INFERENCE_ENDPOINT="https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/<deploy>"
+export DEPLOYMENT_ID="default"          # Runway MLServer KServe V2 모델명 (고정)
 
 curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
   -H "Authorization: Bearer ${RUNWAY_API_KEY}" \
@@ -532,7 +540,7 @@ curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
 응답 예:
 ```json
 {
-  "model_name": "wind-power-v1",
+  "model_name": "default",
   "outputs": [
     { "name": "output-0", "datatype": "FP32", "shape": [1, 1], "data": [362.18] }
   ]
