@@ -136,10 +136,14 @@ OPENBAO_TOKEN     = "s.xxx..."    # OpenBao 콘솔에서 복사
 
 ### 이후 업데이트
 
-| 변경 파일 | 자동 동작 |
-|---|---|
-| `task_runner.py`, `Dockerfile`, `requirements.txt`, `dataset/**` | 이미지 재빌드 (`build-image.yml`) |
-| `wind_power_prediction_v4.py` | airflow-dags 저장소로 sync (`sync-dag.yml`) |
+두 Gitea Actions workflow 는 **서로 독립**적으로 동작합니다 (어느 한쪽이 다른 쪽을 트리거하지 않음). 변경 파일의 성격에 따라 해당 경로만 갱신됩니다:
+
+| 변경 파일 | 자동 동작 | 반영 경로 |
+|---|---|---|
+| `task_runner.py`, `Dockerfile`, `requirements.txt`, `dataset/**` | 이미지 재빌드 (`build-image.yml`) | Gitea CR `:latest` 태그 갱신 → 다음 DAG 실행 시 새 이미지 pull (`image_pull_policy="Always"`) |
+| `wind_power_prediction_v4.py` | DAG 파일 동기화 (`sync-dag.yml`) | `airflow-dags/wind_power_prediction/v4/wind_power_prediction.py` 업데이트 → Airflow 가 git-sync 후 재파싱 |
+
+> `task_runner.py` 와 DAG 파일을 **동시에** 수정한 경우엔 두 워크플로우가 **병렬로** 실행됩니다 (한 push 에 둘 다 트리거).
 
 ### DAG trigger 스크립트
 
@@ -266,6 +270,15 @@ cannot list pods in the namespace "rwyt-energy-forecasting"
 
 노드 이미지 캐시 hit로 임시 성공한 상태. 다른 노드 스케줄링 / 새 이미지 태그 push 시 즉시 실패. `ensure_pull_secret` 태스크 로그 확인하여 근본 해결.
 
+### `download_model.py` 에서 아티팩트를 못 찾음 (`아티팩트를 찾을 수 없습니다`)
+
+실험 이름 변경 시 S3 경로가 어긋난 것. `task_runner.py` 의 `EXPERIMENT_NAME` 을 기본값에서 바꿨다면 **`download_model.py` 의 `S3_ARTIFACT_PREFIX` 도 같이 수정**해야 한다.
+
+- `EXPERIMENT_NAME = "rwyt-energy-forecasting.my-new-exp"` 로 바꿨다면 →
+- `S3_ARTIFACT_PREFIX = "mlflow/experiments/my-new-exp/models/"` 로 업데이트
+
+(`{프로젝트ID}.{실험명}` 중 **`.` 뒤 부분**이 S3 prefix 의 경로 세그먼트와 일치해야 함)
+
 ---
 
 ## 데이터셋
@@ -283,3 +296,16 @@ cannot list pods in the namespace "rwyt-energy-forecasting"
 - 구조 변경 이력:
   - **v1**: `@task` 데코레이터, XCom/PVC 기반 공유
   - **v4**: KubernetesPodOperator + S3 아티팩트 공유 + OpenBao + ensure_pull_secret
+- v2/v3 는 내부 이터레이션 중 사용됐다가 폐기되어 공개 저장소에는 남아있지 않습니다 (v1 → v4 로 직접 건너뜀). 현재 유효한 버전은 **v1 (참고용 백업)** 과 **v4 (현행)** 두 가지입니다.
+
+## 보안
+
+이 튜토리얼은 단순화를 위해 `RUNWAY_API_KEY` 와 `OPENBAO_TOKEN` 을 DAG 파일에 하드코딩합니다. 다음 원칙을 지키세요:
+
+- **저장소는 반드시 Private**. public 전환 시 즉시 토큰 노출 → revoke 필요.
+- 다른 프로젝트로 **fork / 이식** 시 모든 토큰/키 값을 **본인 환경 값으로 교체**.
+- **프로덕션** 환경에선 아래로 완전 분리 권장:
+  - Airflow Pod env: K8s Secret `env_from` (dockerconfigjson 제외)
+  - CI/CD 토큰: Gitea Actions Secrets
+  - 런타임 조회 대상: OpenBao + hvac (현재 AWS 키는 이미 이 방식)
+- **토큰 유출 의심** 시: Runway UI 에서 API 토큰 revoke 후 새로 발급 → OpenBao namespace 에서 서비스 토큰 재발급 → 저장소의 값 일괄 갱신.

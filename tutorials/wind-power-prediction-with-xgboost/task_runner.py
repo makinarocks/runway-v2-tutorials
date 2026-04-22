@@ -10,7 +10,10 @@ task_runner.py — KubernetesPodOperator 용 태스크 실행기
 실행 흐름:
   1) Airflow 가 KubernetesPodOperator 로 Pod 생성 (env_vars 주입)
   2) Pod 안에서 이 스크립트가 `--step load_data` 같은 인자로 실행됨
-  3) 모듈 import 시점에 OpenBao → AWS 키 조회 (아래 load_secrets 참고)
+  3) `__main__` 진입 후 argparse 로 --step 파싱 → _initialize_secrets() 가
+     OpenBao 에서 AWS 키를 조회해 전역 변수에 세팅 (`load_secrets()` 참고)
+     ※ 모듈 import 만으로는 OpenBao 호출이 일어나지 않음 (Dockerfile 빌드 시
+       `python task_runner.py --help` 같은 검증도 안전하게 가능)
   4) STEP_MAP[args.step]() 으로 해당 단계 함수 호출
   5) 함수 내에서 S3 에 아티팩트를 주고받으며 진행
   6) 완료 시 Pod 자동 삭제 (is_delete_operator_pod=True)
@@ -66,6 +69,9 @@ OPENBAO_TOKEN       = os.getenv("OPENBAO_TOKEN", "")
 OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
 OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "wind-power")
 OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
+# 내부 도메인이 자체 서명 인증서를 쓰는 환경이면 "false" 로 두면 됨.
+# 프로덕션에서는 CA 번들을 마운트하고 이 값을 "true" 또는 CA 파일 경로로 변경 권장.
+OPENBAO_VERIFY_TLS  = os.getenv("OPENBAO_VERIFY_TLS", "false").lower() == "true"
 
 # AWS 키는 step 진입 시점에 초기화 (모듈 import 만으로 OpenBao 호출이 일어나지 않도록).
 # Dockerfile 빌드 시 `python task_runner.py --help` 같이 가볍게 import 해도 실패하지 않고,
@@ -80,9 +86,13 @@ def load_secrets() -> dict:
     반환 dict 예:
         { "aws_access_key_id": "...", "aws_secret_access_key": "...",
           "gitea_username": "...", "gitea_password": "..." }
+
+    TLS 정책:
+        기본 OPENBAO_VERIFY_TLS=false — 내부 자체 서명 인증서 환경 기준.
+        프로덕션에선 CA 번들을 마운트하고 env 를 "true" 로 세팅.
     """
     import hvac
-    kwargs = {"url": OPENBAO_URL, "token": OPENBAO_TOKEN}
+    kwargs = {"url": OPENBAO_URL, "token": OPENBAO_TOKEN, "verify": OPENBAO_VERIFY_TLS}
     if OPENBAO_NAMESPACE:
         kwargs["namespace"] = OPENBAO_NAMESPACE
     client = hvac.Client(**kwargs)
@@ -92,6 +102,7 @@ def load_secrets() -> dict:
     )
     # KV v2 응답 구조에서 실제 데이터는 data.data 에 중첩되어 있음
     data = resp["data"]["data"]
+    # ℹ️ 로그에는 키 이름만 출력 — 값은 노출하지 않음
     print(f"[openbao] 크레덴셜 로드 완료: path={OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH} keys={list(data.keys())}")
     return data
 

@@ -55,7 +55,11 @@ S3_BUCKET = "rwyt-energy-forecasting"
 
 # S3 내 아티팩트 경로 prefix
 # 전체 구조: mlflow/experiments/{experiment_name}/models/m-{model_id}/artifacts/{파일들}
-# experiment_name 은 MLflow 의 experiment 이름에서 "<프로젝트ID>." 접두사를 제외한 부분
+#
+# ⚠️ 주의 — task_runner.py 의 EXPERIMENT_NAME 과 연동됩니다.
+# task_runner.py 의 EXPERIMENT_NAME 이 "{프로젝트ID}.{실험명}" 형식이라면
+# 이 경로의 "wind-power-prediction" 부분이 "{실험명}" 과 일치해야 함.
+# 실험명을 바꿨다면 이 값도 함께 업데이트해야 S3 prefix 가 일치.
 S3_ARTIFACT_PREFIX = "mlflow/experiments/wind-power-prediction/models/"
 
 # 모델 이름 (참고용 — 이 스크립트는 직접 사용하지 않지만, 어느 모델을 받는지 명시)
@@ -73,6 +77,8 @@ OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai"
 OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
 OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "wind-power")
 OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
+# 내부 자체 서명 인증서 환경이면 "false" (기본). 프로덕션은 "true" 또는 CA 경로 사용.
+OPENBAO_VERIFY_TLS  = os.getenv("OPENBAO_VERIFY_TLS", "false").lower() == "true"
 
 
 def load_secrets(openbao_token: str) -> dict:
@@ -82,7 +88,7 @@ def load_secrets(openbao_token: str) -> dict:
     토큰 잘못이면 hvac 가 permission denied 예외 발생 → 메시지 확인 후 토큰 재발급.
     """
     import hvac
-    kwargs = {"url": OPENBAO_URL, "token": openbao_token}
+    kwargs = {"url": OPENBAO_URL, "token": openbao_token, "verify": OPENBAO_VERIFY_TLS}
     if OPENBAO_NAMESPACE:
         kwargs["namespace"] = OPENBAO_NAMESPACE
     client = hvac.Client(**kwargs)
