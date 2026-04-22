@@ -107,7 +107,12 @@ cd /mnt/models
 git config --global user.name  "gyuseon.han"
 git config --global user.email "gyuseon.han@makinarocks.ai"
 
-# 자격증명 캐시: 한 번 입력 후 재사용 (/home/coder 도 PVC 에 있으므로 영구 저장)
+# 자격증명 캐시: 한 번 입력 후 재사용
+# 주의: `credential.helper store` 는 HOME 디렉토리에 평문 저장함.
+# 세션 보존 범위는 PVC 마운트 경로(/mnt/models) 아래만이므로,
+# HOME(/home/coder)이 PVC 에 있지 않으면 IDE 재시작 시 사라질 수 있음.
+# 영구 보존하려면 아래처럼 /mnt/models 안에 저장하는 편법도 가능:
+#   git config --global credential.helper "store --file=/mnt/models/.git-credentials"
 git config --global credential.helper store
 ```
 
@@ -176,13 +181,18 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 | `GIT_TOKEN` | 개인 액세스 토큰 (패키지 write + `airflow-dags` write 권한) |
 | `IMAGE_TAG` | `gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest` |
 
-> 개인 액세스 토큰 발급: Gitea 우측 상단 아바타 → **Settings → Applications → Manage Access Tokens → Generate New Token** — 권한에 `write:package` 와 `write:repository` 포함.
+> 개인 액세스 토큰 발급: Gitea 우측 상단 아바타 → **Settings → Applications → Manage Access Tokens → Generate New Token** — UI 에서 **Repository**(write) 와 **Package**(write) 권한 체크. 이 토큰은 저장소 push 와 Container Registry push 양쪽에 동시에 쓰입니다.
 
 ---
 
 ## 5. IDE 에서 소스 코드 구성
 
 공개 튜토리얼 저장소(`makinarocks/runway-v2-tutorials`) 를 참고 자료로 받아서 본인 Gitea 저장소에 맞게 복사/수정하는 흐름입니다.
+
+> ⚠️ **보안 주의** — 이 튜토리얼은 단순화를 위해 **토큰/시크릿 값을 코드에 하드코딩**(`RUNWAY_API_KEY`, `OPENBAO_TOKEN`) 하는 방식을 사용합니다. 그러므로:
+> - Gitea 저장소를 **반드시 Private 으로 유지** (4-1 에서 이미 Private 선택). 실수로 Public 전환 시 세계에 토큰이 노출됩니다.
+> - 프로덕션 환경에서는 **Gitea Actions Secrets + OpenBao + K8s Secret** 으로 완전 분리 권장.
+> - 토큰이 유출되었다고 판단되면 즉시 Runway UI / Gitea UI 에서 토큰 revoke 후 재발급 → 저장소 갱신.
 
 ### 5-1. 빈 저장소 clone
 
@@ -196,6 +206,8 @@ cd wind-power-prediction
 > username 에 본인 Gitea 로그인명, password 에 4-2 에서 만든 개인 액세스 토큰 입력. `credential.helper store` 덕분에 이번 한 번만 입력.
 
 ### 5-2. 참고용 공개 저장소에서 파일 복사
+
+> `makinarocks/runway-v2-tutorials` 는 GitHub public 저장소입니다 — 별도 인증 없이 clone 가능. 접근이 안 되면 플랫폼 담당자에게 대체 URL 을 문의하세요.
 
 ```bash
 # 잠시 상위로 이동해서 reference 저장소 clone
@@ -216,7 +228,7 @@ cd /mnt/models && rm -rf reference
 
 ### 5-3. 본인 환경 값으로 코드 수정
 
-VS Code 에서 `/mnt/models/wind-power-prediction/` 을 워크스페이스로 연 뒤, 아래 3개 파일의 상수를 본인 값으로 조정합니다. 튜토리얼 예시대로라면 프로젝트 ID 가 같으므로 `RUNWAY_API_KEY` / `OPENBAO_TOKEN` 만 바꾸면 됩니다.
+VS Code 에서 `/mnt/models/wind-power-prediction/` 을 워크스페이스로 연 뒤, 아래 파일들의 상수를 본인 값으로 조정합니다. **튜토리얼 예시대로 프로젝트 ID 가 `rwyt-energy-forecasting` 이면 ①의 토큰 2개만 바꾸면 됩니다**. 다른 프로젝트 ID 를 쓴다면 ①~④ 모두 수정 필요.
 
 **① `wind_power_prediction_v4.py`** (DAG)
 ```python
@@ -236,6 +248,26 @@ EXPERIMENT_NAME = "rwyt-energy-forecasting.wind-power-prediction"   # {프로젝
 MODEL_NAME      = "rwyt-energy-forecasting.wind-power-xgboost"
 ```
 > Runway MLflow 규약 상 `{프로젝트ID}.{실험명}` 형식이 필수. 본인 프로젝트 ID 로 prefix 를 바꿉니다.
+
+**③ `download_model.py`** (IDE 스크립트)
+```python
+S3_BUCKET = "rwyt-energy-forecasting"
+# ② 의 EXPERIMENT_NAME 에서 "{프로젝트ID}." 접두사를 뺀 나머지가 실험 이름.
+# 기본값은 "wind-power-prediction" 그대로 사용 가능하지만,
+# ② 의 실험명을 바꿨다면 여기도 같은 이름으로 갱신해야 S3 경로가 일치합니다.
+S3_ARTIFACT_PREFIX = "mlflow/experiments/wind-power-prediction/models/"
+```
+
+**④ `.gitea/workflows/sync-dag.yml`** (DAG 동기화 워크플로우)
+
+`API_BASE` 안의 조직명이 본인 Gitea 조직과 일치해야 합니다:
+```yaml
+# .gitea/workflows/sync-dag.yml 내 API_BASE 라인
+API_BASE="https://gitea.v2.mrxrunway.ai/api/v1/repos/rwyt-energy-forecasting/airflow-dags"
+#                                                   └── 여기를 본인 조직명으로
+```
+> 튜토리얼 예시대로 `rwyt-energy-forecasting` 조직이면 수정 불필요.
+> `build-image.yml` 은 Secrets 값(`IMAGE_TAG`)을 쓰므로 워크플로우 파일 자체 수정은 불필요.
 
 **③ `download_model.py`**
 ```python
@@ -301,6 +333,16 @@ Airflow UI (`https://airflow.v2.mrxrunway.ai`) → DAG 목록에 `wind_power_pre
 ### 옵션 B — IDE 에서 `run_dag.sh`
 
 > ⚠️ `run_dag.sh` 상단 `API_KEY=` 는 **Airflow 전용 JWT** (Runway API 토큰과 다름, 수명 ~24h). 실행 전에 본인 값으로 교체 필수.
+>
+> **Airflow JWT 획득 방법** (Airflow 3.0 기준):
+> ```bash
+> curl -X POST "https://airflow.v2.mrxrunway.ai/auth/token" \
+>   -H "Content-Type: application/json" \
+>   -d '{"username":"<본인 계정>","password":"<본인 비밀번호>"}'
+> ```
+> 응답의 `access_token` 값을 `run_dag.sh` 의 `API_KEY` 에 붙여넣기.
+>
+> 또는 브라우저에서 Airflow UI 로그인 후 DevTools → Network 탭에서 API 요청의 `Authorization: Bearer <token>` 헤더를 복사.
 
 ```bash
 cd /mnt/models/wind-power-prediction
