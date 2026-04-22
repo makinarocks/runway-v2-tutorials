@@ -36,6 +36,14 @@ v1(PythonOperator) 대비 핵심 변경:
      namespace=<project-id>, mount=secret, path=wind-power
      { aws_access_key_id, aws_secret_access_key, gitea_username, gitea_password }
   3. 아래 [사용자 설정] 섹션의 상수를 환경에 맞게 수정
+
+⚠️ 보안 주의:
+  이 파일에는 RUNWAY_API_KEY 와 OPENBAO_TOKEN 이 평문 하드코딩되어 있다.
+  튜토리얼 편의를 위한 선택이며, 다음을 반드시 지킬 것:
+    - 이 저장소를 **Private 으로 유지** (public 전환 시 즉시 토큰이 노출됨)
+    - fork 하거나 다른 프로젝트로 이식할 때 상수 값을 **반드시 본인 값으로 교체**
+    - 프로덕션 환경에서는 Gitea Actions Secrets / OpenBao + K8s Secret (env_from)
+      로 완전 분리 권장 (README.md "보안" 참고)
 """
 
 from datetime import timedelta
@@ -168,8 +176,9 @@ def ensure_pull_secret() -> None:
             "X-Vault-Namespace": OPENBAO_NAMESPACE,      # multi-tenant 시 namespace 지정
         },
     )
-    # SSL 검증 비활성화: 내부 도메인 자체 서명 인증서일 수 있어 튜토리얼에서는 관대하게.
-    # 프로덕션에서는 CA 번들 설정 권장.
+    # SSL 검증 비활성화 — 내부 자체 서명 인증서 환경 기준 (task_runner.py 의
+    # OPENBAO_VERIFY_TLS=false 와 동일한 정책). 프로덕션에선 CA 번들 설정 후
+    # ssl.create_default_context() 를 그대로 쓰거나 cafile 지정 권장.
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE

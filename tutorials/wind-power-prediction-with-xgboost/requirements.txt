@@ -1,10 +1,16 @@
-pandas
-xgboost
-scikit-learn
-mlflow
-apache-airflow
-requests
-boto3
-# S3 artifact sharing for inter-task communication
-hvac
-# OpenBao (Vault-compatible) client for secret retrieval
+# task_runner.py 가 Docker 이미지 안에서 필요로 하는 의존성 목록
+# (Airflow 스케줄러가 돌리는 DAG 파일은 스케줄러 Pod 의 Python 환경을 쓰므로
+#  apache-airflow 패키지는 여기 포함할 필요 없음 — 이미지 크기 감소 차원)
+
+# ── ML 핵심 라이브러리 ─────────────────────────────────────────────
+pandas           # CSV 로드/전처리
+xgboost          # 모델 학습/예측
+scikit-learn     # train_test_split, 평가 지표(RMSE/MAE/R²)
+
+# ── 실험 추적 / 모델 레지스트리 ────────────────────────────────────
+mlflow           # log_to_mlflow 태스크에서 파라미터/메트릭/모델 등록
+
+# ── 통신 / 스토리지 ────────────────────────────────────────────────
+requests         # (간접 의존. mlflow/hvac 가 내부적으로 사용)
+boto3            # S3(MinIO) 업로드/다운로드 — 태스크 간 아티팩트 공유
+hvac             # OpenBao(Vault 호환) 클라이언트 — AWS 키 런타임 조회

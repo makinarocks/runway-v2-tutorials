@@ -1,20 +1,26 @@
 # .gitea/workflows/build-image.yml
 #
-# [Option B] Gitea Actions CI/CD — Gitea CR 이미지 자동 빌드 & 푸시
+# Gitea Actions CI/CD — Docker 이미지 자동 빌드 & Gitea Container Registry 푸시
 #
-# 동작 방식:
-#   아래 파일 중 하나라도 변경되어 main 브랜치에 push되면 자동으로 이미지를 빌드하여
-#   Gitea Container Registry(gitea.v2.mrxrunway.ai)에 푸시한다.
+# 역할:
+#   task_runner.py (및 이미지에 번들되는 의존성/데이터) 가 바뀌면 이미지를 새로 빌드해
+#   :latest 태그로 푸시한다. DAG(KubernetesPodOperator) 가 image_pull_policy="Always"
+#   로 설정돼 있어 다음 실행부터 새 이미지를 pull 한다.
 #
 # 트리거 대상 파일:
 #   - task_runner.py      (태스크 로직 변경)
-#   - Dockerfile          (베이스 이미지 또는 빌드 설정 변경)
+#   - Dockerfile          (베이스 이미지/빌드 설정)
 #   - requirements.txt    (패키지 추가/변경)
 #   - dataset/**          (학습 데이터 변경)
 #
+# 주의:
+#   DAG 파일(wind_power_prediction_v4.py) 변경은 이 워크플로우를 트리거하지 않는다.
+#   DAG 만 수정한 경우는 sync-dag.yml 이 airflow-dags 저장소로 복사하는 경로로만 반영되고
+#   이미지는 재빌드되지 않는다 (의도적 — DAG 는 스케줄러에서 파싱되고 이미지는 Pod 실행에 사용).
+#
 # 사전 준비 (Gitea 저장소 Settings > Secrets and Variables > Actions):
 #   GIT_USERNAME : Gitea 로그인 사용자명
-#   GIT_TOKEN    : Gitea 접근 토큰 (패키지 write 권한 포함)
+#   GIT_TOKEN    : Gitea 접근 토큰 (packages write 권한 필요)
 #   IMAGE_TAG    : 빌드할 이미지 full URL
 #                  예) gitea.v2.mrxrunway.ai/<org>/wind-power-prediction:latest
 
