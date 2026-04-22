@@ -9,6 +9,7 @@
 #
 # 트리거 대상 파일:
 #   - task_runner.py      (태스크 로직 변경)
+#   - config.py           (환경/파생값 모듈. task_runner 가 import)
 #   - Dockerfile          (베이스 이미지/빌드 설정)
 #   - requirements.txt    (패키지 추가/변경)
 #   - dataset/**          (학습 데이터 변경)
@@ -32,6 +33,7 @@ on:
       - main
     paths:
       - "task_runner.py"
+      - "config.py"
       - "Dockerfile"
       - "requirements.txt"
       - "dataset/**"

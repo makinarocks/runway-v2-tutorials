@@ -41,6 +41,8 @@ wind-power-prediction-with-xgboost/
 ├── wind_power_prediction_v1.py    # [참고] PythonOperator 기반 구 버전
 ├── wind_power_prediction_v4.py    # [현행] KubernetesPodOperator 기반 DAG
 ├── task_runner.py                 # Docker 이미지 내 태스크 실행 로직
+├── config.py                      # 전역 설정/파생값 중앙 모듈 (task_runner/IDE 공용)
+├── .env.example                   # 사용자 편집용 환경 템플릿 → cp 하여 .env 생성
 ├── download_model.py              # S3 → PVC 모델 아티팩트 복사 (IDE 실행용)
 ├── test_inference.py              # 배포된 모델 추론 엔드포인트 호출 테스트 (IDE 실행용)
 ├── run_dag.sh                     # Airflow REST API로 DAG trigger
@@ -96,7 +98,7 @@ OpenBao 콘솔에서 프로젝트 namespace(`rwyt-energy-forecasting`)로 로그
 
 2. **Create secret**
    - Path: `wind-power`
-   - Data (4개 키):
+   - Data (5개 키):
 
      | Key | Value |
      |---|---|
@@ -104,24 +106,38 @@ OpenBao 콘솔에서 프로젝트 namespace(`rwyt-energy-forecasting`)로 로그
      | `aws_secret_access_key` | 위 Access Key의 Secret |
      | `gitea_username` | `GIT_USERNAME`과 동일 |
      | `gitea_password` | `GIT_TOKEN`과 동일 |
+     | `runway_api_key` | Runway UI > 사용자 설정 > API 토큰 (Keycloak offline token) |
 
 3. **서비스 토큰 복사**
    - 상단 우측 프로필 → **Copy token** — 이 값을 `OPENBAO_TOKEN`에 입력 (만료되면 재발급)
 
-### 5. DAG 파일 상수 수정
+### 5. 사용자 설정
 
-`wind_power_prediction_v4.py` 상단 [사용자 설정] 섹션을 환경에 맞게 조정:
+튜토리얼 사용자가 수정할 값은 **딱 2곳**뿐입니다. 나머지는 모두 `RUNWAY_PROJECT_ID` 에서 자동 파생됩니다 (`config.py` 와 DAG 상단 규약).
+
+#### 5-1. IDE 스크립트용 `.env`
+
+저장소 루트에서:
+
+```bash
+cp .env.example .env
+# 편집기로 .env 열어서 아래 2값 설정
+#   RUNWAY_PROJECT_ID=<본인 프로젝트 ID>
+#   OPENBAO_TOKEN=<위 4단계에서 복사한 서비스 토큰>
+```
+
+`download_model.py` / `test_inference.py` 는 `config.py` 를 통해 이 `.env` 를 자동 로드합니다.
+
+#### 5-2. DAG 파일 상수 (Airflow 가 파싱)
+
+`wind_power_prediction_v4.py` 상단 [사용자 설정] 섹션의 **2줄만** 수정:
 
 ```python
-NAMESPACE         = "rwyt-energy-forecasting"
-IMAGE             = "gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest"
-S3_BUCKET         = "rwyt-energy-forecasting"
-IMAGE_PULL_SECRET = "gitea-registry-pull"
-
-RUNWAY_API_KEY    = "eyJ..."      # Runway UI > 사용자 설정 > API 토큰
-OPENBAO_NAMESPACE = "rwyt-energy-forecasting"
-OPENBAO_TOKEN     = "s.xxx..."    # OpenBao 콘솔에서 복사
+RUNWAY_PROJECT_ID = "rwyt-energy-forecasting"           # 본인 프로젝트 ID
+OPENBAO_TOKEN     = "s.xxx..."                          # OpenBao 서비스 토큰
 ```
+
+나머지 (`NAMESPACE`, `IMAGE`, `OPENBAO_NAMESPACE` 등) 는 모두 `RUNWAY_PROJECT_ID` 에서 f-string 으로 파생되어 자동 설정됩니다. `RUNWAY_API_KEY` 는 **더 이상 코드에 없습니다** — task_runner 가 OpenBao 의 `runway_api_key` 를 런타임에 조회합니다.
 
 ---
 
@@ -141,7 +157,7 @@ OPENBAO_TOKEN     = "s.xxx..."    # OpenBao 콘솔에서 복사
 
 | 변경 파일 | 자동 동작 | 반영 경로 |
 |---|---|---|
-| `task_runner.py`, `Dockerfile`, `requirements.txt`, `dataset/**` | 이미지 재빌드 (`build-image.yml`) | Gitea CR `:latest` 태그 갱신 → 다음 DAG 실행 시 새 이미지 pull (`image_pull_policy="Always"`) |
+| `task_runner.py`, `config.py`, `Dockerfile`, `requirements.txt`, `dataset/**` | 이미지 재빌드 (`build-image.yml`) | Gitea CR `:latest` 태그 갱신 → 다음 DAG 실행 시 새 이미지 pull (`image_pull_policy="Always"`) |
 | `wind_power_prediction_v4.py` | DAG 파일 동기화 (`sync-dag.yml`) | `airflow-dags/wind_power_prediction/v4/wind_power_prediction.py` 업데이트 → Airflow 가 git-sync 후 재파싱 |
 
 > `task_runner.py` 와 DAG 파일을 **동시에** 수정한 경우엔 두 워크플로우가 **동시에 트리거**됩니다. Gitea Actions 러너 수가 제한된 환경에서는 순차 실행될 수 있습니다.

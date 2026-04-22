@@ -216,7 +216,9 @@ git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
 
 # 튜토리얼 소스를 본인 저장소로 복사 (.git 제외)
 cd reference/tutorials/wind-power-prediction-with-xgboost
-cp -r Dockerfile requirements.txt task_runner.py wind_power_prediction_v4.py download_model.py test_inference.py run_dag.sh dataset /mnt/models/wind-power-prediction/
+cp -r Dockerfile requirements.txt task_runner.py config.py .env.example \
+      wind_power_prediction_v4.py download_model.py test_inference.py \
+      run_dag.sh dataset /mnt/models/wind-power-prediction/
 cp -r .gitea /mnt/models/wind-power-prediction/
 
 # (선택) 문서도 함께
@@ -226,39 +228,48 @@ cp README.md WALKTHROUGH.md /mnt/models/wind-power-prediction/
 cd /mnt/models && rm -rf reference
 ```
 
-### 5-3. 본인 환경 값으로 코드 수정
+### 5-3. 본인 환경 값 설정 — **두 곳만** 수정
 
-VS Code 에서 `/mnt/models/wind-power-prediction/` 을 워크스페이스로 연 뒤, 아래 파일들의 상수를 본인 값으로 조정합니다. **튜토리얼 예시대로 프로젝트 ID 가 `rwyt-energy-forecasting` 이면 ①의 토큰 2개만 바꾸면 됩니다**. 다른 프로젝트 ID 를 쓴다면 ①~④ 모두 수정 필요.
+설정이 `config.py` + `.env` + DAG 상단 2줄로 중앙화돼 있어서, 사용자가 손댈 곳은 **딱 2곳**입니다. 나머지 값(`NAMESPACE`, `IMAGE`, `EXPERIMENT_NAME`, `MODEL_NAME`, `S3_ARTIFACT_PREFIX` 등)은 `RUNWAY_PROJECT_ID` 한 값에서 자동 파생됩니다.
 
-**① `wind_power_prediction_v4.py`** (DAG)
+#### ① `.env` 생성 (IDE 스크립트용)
+
+VS Code 에서 `/mnt/models/wind-power-prediction/` 워크스페이스를 연 뒤 터미널에서:
+
+```bash
+cd /mnt/models/wind-power-prediction
+cp .env.example .env
+```
+
+`.env` 를 열어 아래 값 설정:
+
+```dotenv
+RUNWAY_PROJECT_ID=rwyt-energy-forecasting          # 본인 프로젝트 ID
+OPENBAO_TOKEN=<3-3 에서 복사한 OpenBao 서비스 토큰>
+
+# 추론 테스트는 9단계(모델 배포) 이후 채움. 지금은 비워둬도 됨.
+INFERENCE_ENDPOINT=
+DEPLOYMENT_ID=wind-power-v1
+```
+
+> `.env` 는 `.gitignore` 에 포함되어 있어 Gitea 로 커밋되지 않습니다. IDE 스크립트 (`download_model.py`, `test_inference.py`) 가 `config.py` 를 통해 자동 로드합니다.
+
+#### ② DAG 파일 상수 (`wind_power_prediction_v4.py`)
+
+파일 상단 [사용자 설정] 섹션의 **2줄만** 수정:
+
 ```python
-NAMESPACE         = "rwyt-energy-forecasting"           # 본인 프로젝트 namespace
-IMAGE             = "gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest"
-S3_BUCKET         = "rwyt-energy-forecasting"
-IMAGE_PULL_SECRET = "gitea-registry-pull"
-
-RUNWAY_API_KEY    = "eyJ..."                            # ← 3-4 에서 발급받은 값
-OPENBAO_NAMESPACE = "rwyt-energy-forecasting"
+RUNWAY_PROJECT_ID = "rwyt-energy-forecasting"       # ← 본인 프로젝트 ID
 OPENBAO_TOKEN     = "<3-3 의 OpenBao 서비스 토큰>"
 ```
 
-**② `task_runner.py`** (Docker 이미지 내 로직)
-```python
-EXPERIMENT_NAME = "rwyt-energy-forecasting.wind-power-prediction"   # {프로젝트ID}.{실험명}
-MODEL_NAME      = "rwyt-energy-forecasting.wind-power-xgboost"
-```
-> Runway MLflow 규약 상 `{프로젝트ID}.{실험명}` 형식이 필수. 본인 프로젝트 ID 로 prefix 를 바꿉니다.
+그 아래 [파생값] 섹션은 **수정 불필요** — f-string 으로 `NAMESPACE`, `IMAGE`, `OPENBAO_NAMESPACE` 등이 자동 계산됩니다.
 
-**③ `download_model.py`** (IDE 스크립트)
-```python
-S3_BUCKET = "rwyt-energy-forecasting"
-# ② 의 EXPERIMENT_NAME 에서 "{프로젝트ID}." 접두사를 뺀 나머지가 실험 이름.
-# 기본값은 "wind-power-prediction" 그대로 사용 가능하지만,
-# ② 의 실험명을 바꿨다면 여기도 같은 이름으로 갱신해야 S3 경로가 일치합니다.
-S3_ARTIFACT_PREFIX = "mlflow/experiments/wind-power-prediction/models/"
-```
+> **왜 DAG 는 `.env` 를 못 쓰나?** DAG 는 `airflow-dags` 저장소로 sync 되어 Airflow 스케줄러 Pod 에서 실행됩니다. 사용자의 `.env` 파일은 거기 없으므로 DAG 상단에 직접 하드코딩해야 합니다. 대신 주입되는 env 는 최소한 (`RUNWAY_PROJECT_ID`, `OPENBAO_TOKEN`, `DAG_RUN_ID`) 으로 줄어 있습니다.
 
-**④ `.gitea/workflows/sync-dag.yml`** (DAG 동기화 워크플로우)
+> **`RUNWAY_API_KEY` 는?** 코드에서 완전히 빠졌습니다 — `task_runner.py` 와 `test_inference.py` 가 OpenBao `secret/wind-power` 의 `runway_api_key` 값을 런타임에 조회합니다 (5-4 참조).
+
+#### ③ `.gitea/workflows/sync-dag.yml` (조직명이 다른 경우에만)
 
 `API_BASE` 안의 조직명이 본인 Gitea 조직과 일치해야 합니다:
 ```yaml
@@ -269,18 +280,13 @@ API_BASE="https://gitea.v2.mrxrunway.ai/api/v1/repos/rwyt-energy-forecasting/air
 > 튜토리얼 예시대로 `rwyt-energy-forecasting` 조직이면 수정 불필요.
 > `build-image.yml` 은 Secrets 값(`IMAGE_TAG`)을 쓰므로 워크플로우 파일 자체 수정은 불필요.
 
-**③ `download_model.py`**
-```python
-S3_BUCKET = "rwyt-energy-forecasting"                  # 본인 프로젝트 namespace 와 동일
-```
-
 ### 5-4. OpenBao 에 시크릿 등록
 
 OpenBao 콘솔(3-3 에서 로그인한 탭) 에서:
 
 1. 좌측 **Secret Engines** → `secret/` 클릭 → **Create secret +**
 2. **Path**: `wind-power`
-3. **Secret data** 에 아래 4개 key-value 입력:
+3. **Secret data** 에 아래 **5개** key-value 입력:
 
 | Key | Value |
 |---|---|
@@ -288,7 +294,10 @@ OpenBao 콘솔(3-3 에서 로그인한 탭) 에서:
 | `aws_secret_access_key` | 위 Access Key 의 Secret |
 | `gitea_username` | 4-2 의 `GIT_USERNAME` 과 동일 |
 | `gitea_password` | 4-2 의 `GIT_TOKEN` 과 동일 |
+| `runway_api_key` | 3-4 에서 발급받은 Keycloak offline token |
 
+> `runway_api_key` 는 MLflow 인증(task_runner) 과 추론 엔드포인트 호출(test_inference) 에서 사용됩니다. 여기 한 곳에만 넣으면 두 스크립트 모두 자동으로 가져다 씁니다.
+>
 > S3 자격증명은 Runway 관리자에게 문의 또는 콘솔의 **Keys** 메뉴에서 발급.
 
 ---
@@ -450,7 +459,13 @@ MLServer 는 **KServe V2 Inference Protocol** 을 따르므로 실제 호출 경
 
 ### 10-2. 인증 토큰
 
-3-4 단계의 **Runway API 토큰** (코드의 `RUNWAY_API_KEY`) 을 `Authorization: Bearer` 헤더로 전달. OpenBao 토큰(3-3) 과 다른 토큰입니다.
+`Authorization: Bearer` 헤더에 **Runway API 토큰** (Keycloak offline token) 이 필요합니다. `test_inference.py` 는 다음 우선순위로 토큰을 찾습니다:
+
+1. `--token` CLI 인자 (명시적 오버라이드)
+2. env `RUNWAY_API_KEY`
+3. **OpenBao 의 `runway_api_key`** (기본 — `.env` 에 `OPENBAO_TOKEN` 만 있으면 자동 조회)
+
+5-4 단계에서 OpenBao 에 `runway_api_key` 를 등록했다면 **토큰 관련 인자를 따로 지정할 필요가 없습니다**.
 
 ### 10-3. 학습 데이터셋으로 추론 테스트 (권장)
 
@@ -460,14 +475,13 @@ IDE 터미널에서:
 
 ```bash
 # 저장소 루트에서 실행
-cd ~/workspace/wind-power-prediction
+cd /mnt/models/wind-power-prediction
 
-# 필요한 값을 환경변수로 (또는 --endpoint / --token CLI 인자로)
-export INFERENCE_ENDPOINT="<10-1 UI 에서 복사한 추론 URL>"
-export DEPLOYMENT_ID="wind-power-v1"       # 9-2 에서 만든 모델 배포 ID
-export RUNWAY_API_KEY="eyJhbGciOi..."      # 3-4 의 Runway API 토큰 (Bearer)
+# .env 파일에 INFERENCE_ENDPOINT 추가 (한 번만)
+#   INFERENCE_ENDPOINT=<10-1 UI 에서 복사한 추론 URL>
+#   DEPLOYMENT_ID=wind-power-v1
 
-# CSV 첫 행으로 호출
+# CSV 첫 행으로 호출 — 토큰/엔드포인트 자동 로드
 python test_inference.py
 
 # 랜덤 5개 행을 한 번에 배치 호출 (MAE 자동 계산)
@@ -493,7 +507,13 @@ python test_inference.py --dry-run
 
 스크립트를 쓰지 않고 페이로드를 직접 보고 싶으면 `python test_inference.py --dry-run` 출력을 복사해 curl 에 붙여넣거나 아래 형태로 보냅니다. 피처 순서는 `task_runner.py` 의 전처리와 동일(`id/datetime/uuid/index/wtg/activepower` 제외)이며 총 **19 개** 입니다.
 
+curl 은 `.env` 를 직접 읽지 못하므로 `RUNWAY_API_KEY` 는 별도로 export 해야 합니다 (OpenBao 콘솔 또는 5-4 에서 등록한 값을 복사):
+
 ```bash
+export RUNWAY_API_KEY="eyJhbGciOi..."
+export INFERENCE_ENDPOINT="https://inference.v2.mrxrunway.ai/api/<proj>/<ep>"
+export DEPLOYMENT_ID="wind-power-v1"
+
 curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
   -H "Authorization: Bearer ${RUNWAY_API_KEY}" \
   -H "Content-Type: application/json" \

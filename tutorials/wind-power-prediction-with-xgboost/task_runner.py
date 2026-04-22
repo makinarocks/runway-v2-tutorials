@@ -9,9 +9,11 @@ task_runner.py — KubernetesPodOperator 용 태스크 실행기
 
 실행 흐름:
   1) Airflow 가 KubernetesPodOperator 로 Pod 생성 (env_vars 주입)
+     주입되는 값: RUNWAY_PROJECT_ID / OPENBAO_TOKEN / OPENBAO_VERIFY_TLS / DAG_RUN_ID
+     (나머지는 config.py 가 PROJECT_ID 에서 파생)
   2) Pod 안에서 이 스크립트가 `--step load_data` 같은 인자로 실행됨
   3) `__main__` 진입 후 argparse 로 --step 파싱 → _initialize_secrets() 가
-     OpenBao 에서 AWS 키를 조회해 전역 변수에 세팅 (`load_secrets()` 참고)
+     OpenBao 에서 AWS 키 + runway_api_key 를 조회해 전역 변수에 세팅
      ※ 모듈 import 만으로는 OpenBao 호출이 일어나지 않음 (Dockerfile 빌드 시
        `python task_runner.py --help` 같은 검증도 안전하게 가능)
   4) STEP_MAP[args.step]() 으로 해당 단계 함수 호출
@@ -24,8 +26,7 @@ task_runner.py — KubernetesPodOperator 용 태스크 실행기
   동시 실행되어도 파일이 섞이지 않는다. DAG_RUN_ID 는 DAG 에서 env var 로 주입.
 
 로컬 개발/디버깅:
-    # 환경변수 설정 후 직접 호출 가능
-    export RUNWAY_API_KEY="..." OPENBAO_TOKEN="..." OPENBAO_NAMESPACE="..."
+    # 저장소 루트에 .env 를 두고 (RUNWAY_PROJECT_ID, OPENBAO_TOKEN 설정),
     python task_runner.py --step load_data
 """
 
@@ -35,86 +36,49 @@ import os
 import pickle
 import tempfile
 
-# =============================================================================
-# [설정] 크레덴셜 & MLflow
-#
-# RUNWAY_API_KEY  : Keycloak offline token. MLflow 인증용 (MLFLOW_TRACKING_TOKEN).
-# OPENBAO_TOKEN   : OpenBao 서비스 토큰. AWS 키 등 시크릿 조회용.
-# AWS 키          : 여기서 직접 정의하지 않고 OpenBao 에서 런타임 조회 (load_secrets)
-#
-# 모든 값은 Pod 시작 시 KubernetesPodOperator env_vars 로 주입된다.
-# 로컬 개발 시에는 기본값(빈 문자열) 대신 export 로 환경변수를 설정한 뒤 실행.
-# =============================================================================
-RUNWAY_API_KEY = os.getenv("RUNWAY_API_KEY", "")
-
-MLFLOW_S3_ENDPOINT_URL = os.getenv("MLFLOW_S3_ENDPOINT_URL", "https://s3.v2.mrxrunway.ai")
-MLFLOW_TRACKING_URI    = os.getenv("MLFLOW_TRACKING_URI", "https://mlflow.v2.mrxrunway.ai")
+# 모든 설정값/헬퍼는 config.py 에서 가져온다. 이 모듈이 모든 파생값 계산과
+# .env 로드를 담당하므로 task_runner 에는 중복 상수가 없다.
+from config import (
+    MLFLOW_TRACKING_URI,
+    MLFLOW_S3_ENDPOINT_URL,
+    S3_BUCKET,
+    EXPERIMENT_NAME,
+    MODEL_NAME,
+    load_secrets,
+)
 
 # =============================================================================
-# [설정] OpenBao
-#
-# OpenBao(Vault 호환) 에 저장된 시크릿을 런타임에 조회한다. 저장 구조:
-#   <OPENBAO_KV_MOUNT>/data/<OPENBAO_SECRET_PATH>
-#     → { aws_access_key_id, aws_secret_access_key, ... }
-#
-# 인증 방식:
-#   JWT auth 같은 flow 를 쓰지 않고, 콘솔 로그인 시 발급된 서비스 토큰을
-#   X-Vault-Token 헤더로 직접 보낸다 (hvac.Client(token=...)). 만료 시 재발급 필요.
-#
-# multi-tenant namespace (Runway 프로젝트별 격리) 사용 시 OPENBAO_NAMESPACE 지정.
-# 이 값은 X-Vault-Namespace 헤더로 전달된다.
+# [시크릿] 모듈 import 시에는 비어있고, __main__ 진입 시점에 OpenBao 에서 채워짐.
+# 이유: Dockerfile 빌드 시 `python task_runner.py --help` 같은 가벼운 호출도
+#       credential 없이 안전하게 돌아야 하므로, import 만으로는 OpenBao 호출 X.
 # =============================================================================
-OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai")
-OPENBAO_TOKEN       = os.getenv("OPENBAO_TOKEN", "")
-OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
-OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "wind-power")
-OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
-# TLS 검증 정책.
-#   기본 "true" — Runway OpenBao(https://openbao.v2.mrxrunway.ai) 는 공식 CA 서명이므로
-#   시스템 CA 번들로 검증 가능. 검증을 끄면 MITM 위험.
-#   자체 서명 인증서를 쓰는 특수 환경에서만 "false" 로 오버라이드.
-OPENBAO_VERIFY_TLS  = os.getenv("OPENBAO_VERIFY_TLS", "true").lower() == "true"
-
-# AWS 키는 step 진입 시점에 초기화 (모듈 import 만으로 OpenBao 호출이 일어나지 않도록).
-# Dockerfile 빌드 시 `python task_runner.py --help` 같이 가볍게 import 해도 실패하지 않고,
-# 단위 테스트 / 로컬 syntax check 시에도 credential 없이 동작한다.
+RUNWAY_API_KEY: str = ""         # Keycloak offline token. MLflow 인증용
 AWS_ACCESS_KEY_ID: str = ""
 AWS_SECRET_ACCESS_KEY: str = ""
 
 
-def load_secrets() -> dict:
-    """OpenBao 서비스 토큰으로 KV v2 시크릿을 조회한다.
-
-    반환 dict 예:
-        { "aws_access_key_id": "...", "aws_secret_access_key": "...",
-          "gitea_username": "...", "gitea_password": "..." }
-
-    TLS 정책:
-        기본 OPENBAO_VERIFY_TLS=true — 공식 CA 서명 인증서 환경 기준.
-        자체 서명 인증서 환경에서만 env 를 "false" 로 오버라이드.
-    """
-    import hvac
-    kwargs = {"url": OPENBAO_URL, "token": OPENBAO_TOKEN, "verify": OPENBAO_VERIFY_TLS}
-    if OPENBAO_NAMESPACE:
-        kwargs["namespace"] = OPENBAO_NAMESPACE
-    client = hvac.Client(**kwargs)
-    resp = client.secrets.kv.v2.read_secret_version(
-        path=OPENBAO_SECRET_PATH,
-        mount_point=OPENBAO_KV_MOUNT,
-    )
-    # KV v2 응답 구조에서 실제 데이터는 data.data 에 중첩되어 있음
-    data = resp["data"]["data"]
-    # ℹ️ 로그에는 키 이름만 출력 — 값은 노출하지 않음
-    print(f"[openbao] 크레덴셜 로드 완료: path={OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH} keys={list(data.keys())}")
-    return data
-
-
 def _initialize_secrets() -> None:
-    """__main__ 진입 시점에 한 번 호출되어 전역 AWS 키를 채운다."""
-    global AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+    """__main__ 진입 시점에 한 번 호출되어 OpenBao 에서 시크릿을 받아 전역 변수에 채운다.
+
+    조회 키:
+      - aws_access_key_id / aws_secret_access_key → S3(MinIO) 인증
+      - runway_api_key                             → MLflow 인증 (MLFLOW_TRACKING_TOKEN)
+
+    키가 빠져 있으면 raw KeyError 대신 튜토리얼 문서를 참조하도록 안내한다.
+    """
+    global RUNWAY_API_KEY, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
     data = load_secrets()
+    required = ["aws_access_key_id", "aws_secret_access_key", "runway_api_key"]
+    missing = [k for k in required if k not in data]
+    if missing:
+        raise RuntimeError(
+            f"OpenBao secret/wind-power 에 필수 키가 없음: {missing}. "
+            f"README 4단계 / WALKTHROUGH 5-4 참조하여 추가하세요."
+        )
     AWS_ACCESS_KEY_ID     = data["aws_access_key_id"]
     AWS_SECRET_ACCESS_KEY = data["aws_secret_access_key"]
+    RUNWAY_API_KEY        = data["runway_api_key"]
+
 
 # =============================================================================
 # [설정] S3 아티팩트 경로
@@ -126,7 +90,6 @@ def _initialize_secrets() -> None:
 # 같은 DAG run 의 Pod 들은 이 경로를 공유하므로, 한 태스크가 업로드한 파일을
 # 다음 태스크가 다운로드할 수 있다 (로컬 파일 / XCom 없이도 공유 가능).
 # =============================================================================
-S3_BUCKET  = os.getenv("S3_BUCKET", "rwyt-energy-forecasting")
 DAG_RUN_ID = os.getenv("DAG_RUN_ID", "local")
 S3_PREFIX  = f"wind-power/dag-runs/{DAG_RUN_ID}"
 
@@ -141,13 +104,11 @@ METRICS_JSON_KEY  = f"{S3_PREFIX}/metrics.json"        # evaluate_model → log_
 DATA_IN_IMAGE = "/app/dataset/turbine_data.csv"
 
 # =============================================================================
-# [설정] XGBoost 하이퍼파라미터 & MLflow 명명규칙
+# [설정] XGBoost 하이퍼파라미터
 #
-# XGB_PARAMS    : 학습에 사용되는 모델 파라미터. 튜토리얼이라 고정값. 실험 시에는
-#                 여기를 바꾸거나 DAG param 으로 외부화해서 sweep 가능.
-# EXPERIMENT_NAME / MODEL_NAME :
-#   Runway 규약에 따라 "{프로젝트ID}.{실험명}" 형태로 짓는다.
-#   프로젝트 ID 가 다르면 MLflow 에서 permission denied 가 나므로 이식 시 반드시 수정.
+# 학습에 사용되는 모델 파라미터. 튜토리얼이라 고정값. 실험 시에는 여기를 바꾸거나
+# DAG param 으로 외부화해서 sweep 가능.
+# (EXPERIMENT_NAME / MODEL_NAME 은 config.py 가 PROJECT_ID 에서 파생)
 # =============================================================================
 XGB_PARAMS = {
     "learning_rate": 0.1,
@@ -156,9 +117,6 @@ XGB_PARAMS = {
     "n_estimators": 620,
     "objective": "reg:squarederror",
 }
-
-EXPERIMENT_NAME = "rwyt-energy-forecasting.wind-power-prediction"
-MODEL_NAME      = "rwyt-energy-forecasting.wind-power-xgboost"
 
 
 # =============================================================================

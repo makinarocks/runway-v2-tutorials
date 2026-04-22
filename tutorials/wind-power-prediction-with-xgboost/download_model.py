@@ -14,11 +14,8 @@ download_model.py — MLflow 모델 아티팩트를 PVC 로 복사하는 IDE 스
 사전 준비:
   1. OpenBao 웹 콘솔에 시크릿 등록 (task_runner.py 와 같은 path):
        aws_access_key_id, aws_secret_access_key
-  2. OpenBao 서비스 토큰 확보 (콘솔 namespace 로그인 시 자동 발급):
-       export OPENBAO_TOKEN="s.xxx..."       ← 권장 방식
-       또는 CLI 옵션: --openbao-token "s.xxx..."
-  3. (기본값과 다르면) OPENBAO_NAMESPACE 도 export
-       export OPENBAO_NAMESPACE="<project-id>"
+  2. 저장소 루트의 `.env` 에 RUNWAY_PROJECT_ID, OPENBAO_TOKEN 설정
+     (`.env.example` 을 복사해서 편집)
 
 사용법:
     # 사용 가능한 모델 목록
@@ -43,63 +40,14 @@ import argparse
 import os
 import boto3
 
-# =============================================================================
-# [설정]
-# =============================================================================
-
-# ── S3 / MinIO ──────────────────────────────────────────────────────────────
-# MLflow 서버가 모델 아티팩트를 올려두는 MinIO 엔드포인트와 bucket.
-# (Runway 프로젝트 생성 시 bucket 이름은 프로젝트 ID 와 같게 자동 프로비저닝)
-MLFLOW_S3_ENDPOINT_URL = "https://s3.v2.mrxrunway.ai"
-S3_BUCKET = "rwyt-energy-forecasting"
-
-# S3 내 아티팩트 경로 prefix
-# 전체 구조: mlflow/experiments/{experiment_name}/models/m-{model_id}/artifacts/{파일들}
-#
-# ⚠️ 주의 — task_runner.py 의 EXPERIMENT_NAME 과 연동됩니다.
-# task_runner.py 의 EXPERIMENT_NAME 이 "{프로젝트ID}.{실험명}" 형식이라면
-# 이 경로의 "wind-power-prediction" 부분이 "{실험명}" 과 일치해야 함.
-# 실험명을 바꿨다면 이 값도 함께 업데이트해야 S3 prefix 가 일치.
-S3_ARTIFACT_PREFIX = "mlflow/experiments/wind-power-prediction/models/"
-
-# 모델 이름 (참고용 — 이 스크립트는 직접 사용하지 않지만, 어느 모델을 받는지 명시)
-MODEL_NAME = "rwyt-energy-forecasting.wind-power-xgboost"
-
-# PVC 마운트 경로
-# Runway 모델 배포 UI 는 /mnt/models/{model-id}/ 구조에 있는 파일을 인식한다.
-# IDE 배포 시 PVC 를 이 경로에 마운트했다는 전제. 경로를 바꿨다면 이 값도 수정.
-MODEL_REGISTRY_PATH = "/mnt/models"
-
-# ── OpenBao 설정 ─────────────────────────────────────────────────────────────
-# task_runner.py 의 동일 구성을 IDE 환경에서도 재사용.
-# OPENBAO_TOKEN 은 env/CLI 로만 받음 (코드에 하드코딩 금지).
-OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai")
-OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
-OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "wind-power")
-OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
-# TLS 검증 정책: 기본 "true" (Runway OpenBao 공식 CA 서명 전제).
-# 자체 서명 인증서 환경에서만 "false" 로 오버라이드.
-OPENBAO_VERIFY_TLS  = os.getenv("OPENBAO_VERIFY_TLS", "true").lower() == "true"
-
-
-def load_secrets(openbao_token: str) -> dict:
-    """OpenBao 서비스 토큰으로 KV v2 시크릿을 조회한다.
-
-    반환 dict 에서 aws_access_key_id / aws_secret_access_key 를 꺼내 S3 인증에 사용.
-    토큰 잘못이면 hvac 가 permission denied 예외 발생 → 메시지 확인 후 토큰 재발급.
-    """
-    import hvac
-    kwargs = {"url": OPENBAO_URL, "token": openbao_token, "verify": OPENBAO_VERIFY_TLS}
-    if OPENBAO_NAMESPACE:
-        kwargs["namespace"] = OPENBAO_NAMESPACE
-    client = hvac.Client(**kwargs)
-    resp = client.secrets.kv.v2.read_secret_version(
-        path=OPENBAO_SECRET_PATH,
-        mount_point=OPENBAO_KV_MOUNT,
-    )
-    data = resp["data"]["data"]
-    print(f"[openbao] 크레덴셜 로드 완료: path={OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH} keys={list(data.keys())}")
-    return data
+# 모든 환경/경로 상수는 config.py 에 중앙화돼 있음. .env 로드도 config 가 수행.
+from config import (
+    MLFLOW_S3_ENDPOINT_URL,
+    S3_BUCKET,
+    S3_ARTIFACT_PREFIX,
+    MODEL_REGISTRY_PATH,
+    load_secrets,
+)
 
 
 def get_s3_client(secrets: dict):
@@ -187,17 +135,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="S3에서 MLflow 모델 아티팩트를 PVC로 다운로드")
     parser.add_argument("--model-id", default=None, help="다운로드할 model ID (예: m-5d03d4e...). 미지정 시 최신 모델")
     parser.add_argument("--list", action="store_true", help="사용 가능한 model ID 목록만 출력 (다운로드 없이)")
-    parser.add_argument("--openbao-token", default=None, help="OpenBao 서비스 토큰 (미지정 시 env OPENBAO_TOKEN 사용)")
     args = parser.parse_args()
 
-    # 토큰은 CLI 인자가 env 를 덮어쓰도록 처리 (둘 다 없으면 안내하고 종료)
-    openbao_token = args.openbao_token or os.getenv("OPENBAO_TOKEN")
-    if not openbao_token:
-        print("[download_model] OPENBAO_TOKEN 이 필요합니다. env 또는 --openbao-token 으로 전달하세요.")
-        exit(1)
-
-    # 시크릿 → S3 클라이언트 준비 (list / download 양쪽에서 공용)
-    secrets = load_secrets(openbao_token)
+    # 시크릿 → S3 클라이언트 준비 (list / download 양쪽에서 공용).
+    # OPENBAO_TOKEN 은 config.py 가 .env/env 에서 읽는다. 없으면 load_secrets() 가 예외.
+    secrets = load_secrets()
     s3 = get_s3_client(secrets)
 
     if args.list:
