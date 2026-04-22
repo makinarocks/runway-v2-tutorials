@@ -77,8 +77,9 @@ OPENBAO_URL         = os.getenv("OPENBAO_URL", "https://openbao.v2.mrxrunway.ai"
 OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
 OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "wind-power")
 OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
-# 내부 자체 서명 인증서 환경이면 "false" (기본). 프로덕션은 "true" 또는 CA 경로 사용.
-OPENBAO_VERIFY_TLS  = os.getenv("OPENBAO_VERIFY_TLS", "false").lower() == "true"
+# TLS 검증 정책: 기본 "true" (Runway OpenBao 공식 CA 서명 전제).
+# 자체 서명 인증서 환경에서만 "false" 로 오버라이드.
+OPENBAO_VERIFY_TLS  = os.getenv("OPENBAO_VERIFY_TLS", "true").lower() == "true"
 
 
 def load_secrets(openbao_token: str) -> dict:
