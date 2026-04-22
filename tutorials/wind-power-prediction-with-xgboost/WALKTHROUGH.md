@@ -1,319 +1,423 @@
-# End-to-End Walkthrough — Runway IDE 로 풍력 발전량 예측 모델 배포까지
+# End-to-End Walkthrough — Runway Code Server IDE 에서 처음부터 끝까지
 
-이 문서는 **Runway 콘솔 UI 를 처음 써보는 사용자** 가 풍력 발전량 예측 튜토리얼을 **볼륨 생성 → IDE 배포 → DAG 실행 → 모델 다운로드 → 추론 엔드포인트 배포 → 추론 호출** 까지 한 번에 따라할 수 있도록 작성된 단계별 가이드입니다.
+이 문서는 **Runway 콘솔에서 PVC 와 Code Server IDE 를 배포하고, 그 IDE 안에서 wind-power-prediction 프로젝트 전체를 처음부터 구현 → 본인 Gitea 저장소에 push → DAG 실행 → 모델 배포 → 추론 테스트** 까지 한 사이클을 처음 따라가는 사용자를 위한 가이드입니다.
 
-> 이 가이드는 [README.md](./README.md) 의 **사전 요구사항** 이 이미 충족되어 있다고 가정합니다(RoleBinding, OpenBao 시크릿, Gitea Actions secrets, Runway 프로젝트 등). 아직 안 됐다면 README 의 "사전 준비" 섹션을 먼저 완료해 주세요.
+전제:
+- 개발은 **로컬이 아니라 Runway 에 배포한 Code Server (VS Code in browser)** 에서 수행
+- Gitea 의 **`airflow-dags` 저장소는 이미 존재** (플랫폼에서 기본 제공)
+- **`wind-power-prediction` 저장소는 네가 직접 생성**
+
+[README.md](./README.md) 는 구조/참조 문서이고, 본 문서는 실행 가이드입니다.
 
 ---
 
-## 0. 체크리스트 — 시작 전에
+## 0. 시작 전에 확인할 것 (관리자/플랫폼 영역)
 
-| 항목 | 완료 여부 | 참고 |
+아래는 **일반적으로 Runway 관리자가 한 번만 세팅**하는 항목입니다. 본인이 처음 시도하는 사용자라면 관리자에게 확인 후 시작하세요.
+
+| 항목 | 확인 방법 | 참고 |
 |---|---|---|
-| Runway 콘솔 접속 가능 (Google SSO) | ☐ | `https://runway.v2.mrxrunway.ai` |
-| 대상 워크스페이스 / 프로젝트 존재 | ☐ | 본 가이드 예시: workspace `Runway 2.0 Tutorials` / project `energy-forecasting` |
-| K8s namespace 에 `airflow-scheduler` SA RoleBinding 완료 | ☐ | [README § 사전 준비 3](./README.md#3-airflow-scheduler-sa에-rolebinding-생성) |
-| OpenBao KV v2 에 `aws_access_key_id`, `aws_secret_access_key`, `gitea_username`, `gitea_password` 등록 | ☐ | [README § 사전 준비 4](./README.md#4-openbao-시크릿-등록) |
-| Gitea 저장소 `wind-power-prediction`, `airflow-dags` 생성 + Actions Secrets 등록 | ☐ | [README § 사전 준비 2](./README.md#2-gitea-저장소-준비) |
-| DAG 상수 수정 & push 완료 (이미지 빌드 & DAG sync 워크플로우 1회 이상 성공) | ☐ | [README § 배포 & 실행](./README.md#배포--실행) |
+| Runway 콘솔 로그인 가능 (Google SSO) | `https://runway.v2.mrxrunway.ai` 접속 | 워크스페이스에 초대되어 있어야 함 |
+| 대상 프로젝트 존재 | 본 가이드 예시: `energy-forecasting` (namespace `rwyt-energy-forecasting`, S3 bucket 동일) | |
+| K8s RoleBinding (`runway-applications:airflow-scheduler` → edit on `<project-ns>`) | `kubectl get rolebinding -n <project-ns>` | [README § 사전 준비 3](./README.md#3-airflow-scheduler-sa에-rolebinding-생성) |
+| Gitea 조직(`rwyt-energy-forecasting`) 존재 + `airflow-dags` 저장소 기본 생성됨 | Gitea UI 에서 확인 | DAG sync 대상 |
+| OpenBao namespace (`rwyt-energy-forecasting`) 로그인 가능 & KV v2 엔진(`secret`) enabled | `https://openbao.v2.mrxrunway.ai` 로그인 후 Secret Engines 메뉴 | [README § 사전 준비 4](./README.md#4-openbao-시크릿-등록) |
 
-체크리스트를 다 통과해야 아래 단계가 정상 동작합니다.
+위가 다 OK 라면 **1단계부터** 시작.
 
 ---
 
 ## 1. 볼륨(PVC) 생성
 
-학습된 모델 아티팩트를 S3 에서 복사해둘 영구 저장소를 만듭니다. 이 볼륨은 **IDE 에서는 `/mnt/models` 에 마운트**되고, **추론 엔드포인트 배포 시에도 같은 볼륨을 가리켜 모델 파일을 서빙**합니다.
+학습된 모델 아티팩트를 S3 에서 내려받아 영구 보관할 볼륨. **IDE 개발 디렉토리도 여기 담아 세션 간 보존** 하도록 활용합니다.
 
 ### UI 경로
 
-1. Runway 콘솔 로그인 → 워크스페이스 `Runway 2.0 Tutorials` 선택 → 프로젝트 `energy-forecasting` 클릭
-2. 좌측 네비게이션 **스토리지** 메뉴로 이동
-3. 우측 상단 **+ 생성** 클릭
+1. Runway 콘솔 → 워크스페이스(`Runway 2.0 Tutorials`) → 프로젝트 `energy-forecasting`
+2. 좌측 **스토리지** 메뉴 → 우측 상단 **+ 생성**
 
 ### 입력 값
 
 | 필드 | 값 | 이유 |
 |---|---|---|
-| 볼륨 ID | `wind-power-models` | 영문소문자-하이픈. 최대 63자 |
-| 스토리지 클래스 | `ceph-filesystem` | RWX 를 지원하는 file system 기반 클래스 (ceph-block 은 RWO 만 지원) |
-| 접근 모드 | `ReadWriteMany` | IDE + 추론 Pod 가 동시에 같은 볼륨을 읽기 위함 |
-| 크기 | `5` (GiB) | XGBoost 모델 여러 버전을 보관해도 충분. 최대 25 GiB |
+| 볼륨 ID | `wind-power-models` | 영문 소문자 + 하이픈, 최대 63자 |
+| 스토리지 클래스 | `ceph-filesystem` | RWX 지원 (IDE + 추론 Pod 동시 마운트 가능) |
+| 접근 모드 | `ReadWriteMany` | 여러 Pod 에서 동시 접근 |
+| 크기 | `5` (GiB) | 모델 아티팩트/개발 작업 공간 |
 
-**생성** 버튼 클릭 → 스토리지 목록에 `wind-power-models` 가 `Bound` 상태로 표시되면 성공.
+**생성** 버튼 → 목록에 `Bound` 상태로 표시되면 성공.
 
 ---
 
 ## 2. Code Server IDE 배포 (PVC 마운트)
 
-`download_model.py` 스크립트를 돌리기 위한 브라우저 IDE 를 띄웁니다. 방금 만든 볼륨을 `/mnt/models` 에 마운트합니다.
-
 ### UI 경로
 
-1. 좌측 **카탈로그** 메뉴
-2. **Code server** 카드 클릭 → 우측 상단 **+ 애플리케이션 생성** 클릭
-3. 다이얼로그에 아래 값 입력
+1. 좌측 **카탈로그** → **Code server** 카드 → 우측 상단 **+ 애플리케이션 생성**
 
 ### 기본 정보
 
-| 필드 | 값 |
+| 필드 | 값 (예시) |
 |---|---|
 | 이름 | `Wind Power IDE` |
 | ID | `wind-power-ide` |
-| 설명 | (선택) `모델 다운로드용 VS Code` |
+| 설명 | (선택) `풍력 예측 튜토리얼 개발용 VS Code` |
 
 ### Helm values.yaml 수정
 
-기본 템플릿에서 아래 두 군데를 수정하세요:
+기본 템플릿에서 두 군데만 바꿉니다:
 
-**① `persistence` 섹션을 기존 PVC 재사용으로 변경**
+**① `persistence` 를 기존 볼륨 재사용으로**
 ```yaml
 persistence:
   enabled: true
   mountPath: /mnt/models
-  existingClaim: wind-power-models   # ← 1단계에서 만든 볼륨 ID
-  # 아래 네 줄은 existingClaim 사용 시 무시되지만 주석 해제하지 않아도 됨
+  existingClaim: wind-power-models   # 1단계에서 만든 볼륨 ID
+  # existingClaim 사용 시 아래 필드는 무시됨
   # accessMode: ReadWriteMany
   # storageClassName: ""
   # size: 5Gi
 ```
 
-**② `httpRoute.hostname` 을 본인 sub-domain 으로 변경**
+**② `httpRoute.hostname` 을 본인 서브도메인으로**
 ```yaml
 httpRoute:
   enabled: true
-  hostname: "wind-power-ide.v2.mrxrunway.ai"   # ← 원하는 서브도메인
+  hostname: "wind-power-ide.v2.mrxrunway.ai"
   hostnames: []
 ```
 
-나머지(image, resources 등)는 기본값 유지.
-
 ### 생성 & 접속
 
-**생성** 클릭 → **애플리케이션** 메뉴로 이동 → 카드 상태가 `Healthy` 로 바뀔 때까지 1-2분 대기 → 카드 클릭 → 상단의 접속 URL(또는 httpRoute.hostname) 로 진입 → **Code Server (VS Code) 브라우저 IDE** 가 열립니다.
+**생성** → 좌측 **애플리케이션** 메뉴 → 카드 상태가 `Healthy` 가 될 때까지 1-2분 대기 → 카드 클릭 → **상세 페이지 상단의 접속 URL** 로 진입하면 브라우저 VS Code 가 열립니다.
 
 ---
 
-## 3. IDE 에서 저장소 clone + 스크립트 실행 준비
+## 3. IDE 개발 환경 초기 설정
 
-Code Server 터미널을 엽니다 (상단 메뉴 `Terminal > New Terminal` 또는 `Ctrl+``).
+Code Server 터미널을 엽니다 (`Terminal > New Terminal` 또는 ``Ctrl+` ``).
 
-### 3-1. Gitea 저장소 clone & 자격증명 저장
+### 3-1. 작업 디렉토리 이동 & git 기본 설정
 
 ```bash
-cd /mnt/models            # 볼륨이 마운트된 경로 — 여기서 작업하면 파일이 영구 보존됨
+# 볼륨이 마운트된 경로 (세션이 끊겨도 파일 유지됨)
+cd /mnt/models
 
-# credential helper 를 켜두면 한 번만 입력하고 이후 재사용됨 (/home/coder 도 PVC 에 속함)
+# git 사용자 정보 (본인 값으로)
+git config --global user.name  "gyuseon.han"
+git config --global user.email "gyuseon.han@makinarocks.ai"
+
+# 자격증명 캐시: 한 번 입력 후 재사용 (/home/coder 도 PVC 에 있으므로 영구 저장)
 git config --global credential.helper store
+```
 
+### 3-2. 파이썬 패키지 설치
+
+IDE 안에서 `download_model.py` / 기타 스크립트를 돌리려면:
+
+```bash
+pip install boto3 hvac
+```
+
+권한 오류가 나면:
+```bash
+pip install --user boto3 hvac && export PATH="$HOME/.local/bin:$PATH"
+# 또는 venv
+python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
+```
+
+### 3-3. OpenBao 서비스 토큰 확보 (AWS 키 조회용)
+
+`download_model.py` 와 DAG 의 `ensure_pull_secret` / `task_runner.py` 가 공통으로 사용합니다.
+
+1. 새 탭에서 `https://openbao.v2.mrxrunway.ai` 접속
+2. 프로젝트 namespace (`rwyt-energy-forecasting`) 로 로그인 — 자동 발급되는 서비스 토큰을 **Copy token** 으로 복사
+3. IDE 터미널에 저장 (나중에 코드의 `OPENBAO_TOKEN` 상수에도 넣을 값):
+   ```bash
+   export OPENBAO_TOKEN="<콘솔에서 복사한 값>"
+   export OPENBAO_NAMESPACE="rwyt-energy-forecasting"
+   ```
+
+> 토큰은 세션 만료 시 재발급 필요.
+
+### 3-4. Runway API 토큰 확보 (MLflow / 추론용)
+
+**OpenBao 토큰과 별개**입니다. 이 토큰은 DAG 가 MLflow 에 접근할 때, 그리고 추론 endpoint 호출 시 `Authorization: Bearer` 헤더로 사용됩니다.
+
+1. Runway 콘솔 우측 상단 **프로필 아이콘** → **API 토큰** (또는 **사용자 설정 > API 토큰**)
+2. **새 토큰 발급** → 값을 안전한 곳에 저장
+
+> 같은 사용자가 콘솔에서 새 토큰을 발급받으면 **이전 토큰은 무효화**됩니다. 실행 도중 재발급했다면 아래 5단계에서 DAG 파일의 `RUNWAY_API_KEY` 도 같이 갱신해야 함.
+
+---
+
+## 4. Gitea 에 본인 저장소(`wind-power-prediction`) 생성
+
+### 4-1. 저장소 생성
+
+1. `https://gitea.v2.mrxrunway.ai` 접속 & 로그인
+2. 우측 상단 **+ → 새 저장소 만들기**
+3. 입력:
+   - **소유자**: `rwyt-energy-forecasting` (프로젝트와 동일 조직)
+   - **저장소 이름**: `wind-power-prediction`
+   - **가시성**: Private (팀 내부)
+   - **저장소 초기화**: 체크 (README.md 자동 생성 — 첫 커밋 용)
+4. **저장소 만들기**
+
+> `airflow-dags` 저장소는 **이미 생성되어 있음** (플랫폼 기본 제공). 손대지 않습니다.
+
+### 4-2. Actions Secrets 등록
+
+저장소 **Settings → Secrets and Variables → Actions** 메뉴에 3개:
+
+| 이름 | 값 |
+|---|---|
+| `GIT_USERNAME` | 본인의 Gitea 로그인명 |
+| `GIT_TOKEN` | 개인 액세스 토큰 (패키지 write + `airflow-dags` write 권한) |
+| `IMAGE_TAG` | `gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest` |
+
+> 개인 액세스 토큰 발급: Gitea 우측 상단 아바타 → **Settings → Applications → Manage Access Tokens → Generate New Token** — 권한에 `write:package` 와 `write:repository` 포함.
+
+---
+
+## 5. IDE 에서 소스 코드 구성
+
+공개 튜토리얼 저장소(`makinarocks/runway-v2-tutorials`) 를 참고 자료로 받아서 본인 Gitea 저장소에 맞게 복사/수정하는 흐름입니다.
+
+### 5-1. 빈 저장소 clone
+
+IDE 터미널 (`cd /mnt/models`) 에서:
+
+```bash
 git clone https://gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction.git
 cd wind-power-prediction
 ```
 
-> Gitea private 저장소라 username/password 를 물어봅니다. **username 에 본인 Gitea 계정, password 에 개인 접근 토큰**(패스워드 아님) 을 입력하세요. 2단계 인증을 쓰는 경우 비밀번호는 안 먹을 수 있어요.
+> username 에 본인 Gitea 로그인명, password 에 4-2 에서 만든 개인 액세스 토큰 입력. `credential.helper store` 덕분에 이번 한 번만 입력.
 
-### 3-2. 필요한 파이썬 패키지 설치
-
-Code Server 이미지에는 `pip` 가 있지만 `boto3` / `hvac` 가 없을 수 있습니다:
+### 5-2. 참고용 공개 저장소에서 파일 복사
 
 ```bash
-# 시스템 파이썬에 설치 (Code Server 기본 사용자는 root 권한을 가짐)
-pip install boto3 hvac
+# 잠시 상위로 이동해서 reference 저장소 clone
+cd /mnt/models
+git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
+
+# 튜토리얼 소스를 본인 저장소로 복사 (.git 제외)
+cd reference/tutorials/wind-power-prediction-with-xgboost
+cp -r Dockerfile requirements.txt task_runner.py wind_power_prediction_v4.py download_model.py run_dag.sh dataset /mnt/models/wind-power-prediction/
+cp -r .gitea /mnt/models/wind-power-prediction/
+
+# (선택) 문서도 함께
+cp README.md WALKTHROUGH.md /mnt/models/wind-power-prediction/
+
+# reference 는 삭제 가능
+cd /mnt/models && rm -rf reference
 ```
 
-권한 오류가 나면 `--user` 옵션 또는 venv 를 사용하세요:
+### 5-3. 본인 환경 값으로 코드 수정
 
-```bash
-# 대안 1: 사용자 디렉토리에 설치 (PATH 에 ~/.local/bin 포함 필요)
-pip install --user boto3 hvac
-export PATH="$HOME/.local/bin:$PATH"
+VS Code 에서 `/mnt/models/wind-power-prediction/` 을 워크스페이스로 연 뒤, 아래 3개 파일의 상수를 본인 값으로 조정합니다. 튜토리얼 예시대로라면 프로젝트 ID 가 같으므로 `RUNWAY_API_KEY` / `OPENBAO_TOKEN` 만 바꾸면 됩니다.
 
-# 대안 2: venv 사용 (권장)
-python -m venv .venv && source .venv/bin/activate
-pip install boto3 hvac
+**① `wind_power_prediction_v4.py`** (DAG)
+```python
+NAMESPACE         = "rwyt-energy-forecasting"           # 본인 프로젝트 namespace
+IMAGE             = "gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest"
+S3_BUCKET         = "rwyt-energy-forecasting"
+IMAGE_PULL_SECRET = "gitea-registry-pull"
+
+RUNWAY_API_KEY    = "eyJ..."                            # ← 3-4 에서 발급받은 값
+OPENBAO_NAMESPACE = "rwyt-energy-forecasting"
+OPENBAO_TOKEN     = "<3-3 의 OpenBao 서비스 토큰>"
 ```
 
-### 3-3. OpenBao 서비스 토큰 확보 (S3 자격증명용)
+**② `task_runner.py`** (Docker 이미지 내 로직)
+```python
+EXPERIMENT_NAME = "rwyt-energy-forecasting.wind-power-prediction"   # {프로젝트ID}.{실험명}
+MODEL_NAME      = "rwyt-energy-forecasting.wind-power-xgboost"
+```
+> Runway MLflow 규약 상 `{프로젝트ID}.{실험명}` 형식이 필수. 본인 프로젝트 ID 로 prefix 를 바꿉니다.
 
-`download_model.py` 는 AWS 키를 OpenBao 에서 읽어오므로 **OpenBao 서비스 토큰** 이 필요합니다.
+**③ `download_model.py`**
+```python
+S3_BUCKET = "rwyt-energy-forecasting"                  # 본인 프로젝트 namespace 와 동일
+```
 
-1. 새 브라우저 탭에서 `https://openbao.v2.mrxrunway.ai` 접속
-2. 프로젝트 namespace (`rwyt-energy-forecasting`) 로 로그인하면 자동 발급되는 서비스 토큰을 **Copy token** 으로 복사 (콘솔에서 복사한 값 그대로 사용)
-3. IDE 터미널에서 환경변수로 설정:
-   ```bash
-   export OPENBAO_TOKEN="<복사한 값 그대로>"
-   export OPENBAO_NAMESPACE="rwyt-energy-forecasting"
-   ```
+### 5-4. OpenBao 에 시크릿 등록
 
-> 토큰은 세션이 끊기면 만료됩니다. 실행 직전에 새로 복사하세요.
+OpenBao 콘솔(3-3 에서 로그인한 탭) 에서:
 
-### 3-4. Runway API 토큰 확보 (MLflow 및 추론 호출용)
+1. 좌측 **Secret Engines** → `secret/` 클릭 → **Create secret +**
+2. **Path**: `wind-power`
+3. **Secret data** 에 아래 4개 key-value 입력:
 
-**OpenBao 서비스 토큰과 별개**로, **Runway API 토큰(Keycloak offline token)** 도 필요합니다. 이 토큰은:
-- DAG 가 MLflow 에 접근할 때 사용됩니다 (`wind_power_prediction_v4.py` 의 `RUNWAY_API_KEY` 상수)
-- 7단계 추론 호출 시 `Authorization: Bearer` 헤더 값으로도 사용됩니다
+| Key | Value |
+|---|---|
+| `aws_access_key_id` | Runway 에서 발급받은 S3 Access Key ID |
+| `aws_secret_access_key` | 위 Access Key 의 Secret |
+| `gitea_username` | 4-2 의 `GIT_USERNAME` 과 동일 |
+| `gitea_password` | 4-2 의 `GIT_TOKEN` 과 동일 |
 
-발급 경로:
-1. Runway 콘솔 우측 상단 **프로필 아이콘** (이니셜) 클릭
-2. **API 토큰** 메뉴 (또는 **사용자 설정 > API 토큰**) 진입
-3. **새 토큰 발급** → 복사해서 안전한 곳에 저장
-
-> 이 토큰은 **세션별 offline token** 이라, 같은 사용자가 콘솔에서 새 토큰을 발급받으면 이전 토큰이 무효화됩니다 (README §트러블슈팅 참고). 4단계 이후 재발급했다면 DAG 파일의 `RUNWAY_API_KEY` 상수도 갱신 필요.
+> S3 자격증명은 Runway 관리자에게 문의 또는 콘솔의 **Keys** 메뉴에서 발급.
 
 ---
 
-## 4. DAG 실행 (최초 학습)
+## 6. 첫 Push — CI/CD 자동 트리거
 
-실제 학습을 돌려 MLflow 에 모델을 등록합니다. DAG 는 Gitea push 로 이미 동기화되어 있으므로 **Airflow UI 에서 수동 trigger** 또는 IDE 에서 `run_dag.sh` 실행 중 선택하면 됩니다.
+이제 본인 코드를 Gitea 로 올리면 Gitea Actions 가 자동으로 이미지를 빌드하고 DAG 파일을 airflow-dags 로 동기화합니다.
 
-### 옵션 A — Airflow UI
-
-1. `https://airflow.v2.mrxrunway.ai` 접속
-2. DAG 목록에서 `wind_power_prediction_v4` 클릭
-3. 우측 ▶ 버튼으로 `Trigger DAG`
-4. 각 태스크가 순서대로 초록색으로 바뀌는지 확인 (`ensure_pull_secret → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow`)
-
-### 옵션 B — `run_dag.sh` 스크립트
-
-> ⚠️ `run_dag.sh` 상단의 `API_KEY=` 는 **Airflow 전용 JWT** (Keycloak offline token 과 다름, 수명 ~24h) 입니다. 실행 전에 본인의 값으로 교체해야 합니다.
->
-> - 방법 1: Airflow UI (`https://airflow.v2.mrxrunway.ai`) 로그인 후 브라우저 DevTools → Application → Cookies 또는 Local Storage 에서 JWT 추출
-> - 방법 2: Airflow UI **Security > List Users > Generate Token** (버전에 따라 다름)
->
-> 교체 없이 실행하면 401 Unauthorized 가 납니다.
-
-IDE 터미널에서:
 ```bash
 cd /mnt/models/wind-power-prediction
-# 파일 편집해서 API_KEY 값 교체 후 실행
+git add .
+git commit -m "feat: initial wind-power-prediction setup"
+git push origin main
+```
+
+### 6-1. Gitea Actions 동작 확인
+
+Gitea 저장소 **Actions** 탭 진입. 두 워크플로우가 실행됩니다:
+
+- **Build and Push to Gitea CR** — Docker 이미지 빌드 & CR 푸시 (`task_runner.py`, `Dockerfile`, `requirements.txt`, `dataset/**` 변경 시)
+- **Sync DAG to airflow-dags** — DAG 파일을 `rwyt-energy-forecasting/airflow-dags` 저장소의 `wind_power_prediction/v4/wind_power_prediction.py` 로 복사 (`wind_power_prediction_v4.py` 변경 시)
+
+두 개 모두 녹색 체크로 끝날 때까지 대기 (이미지 빌드는 5-10분).
+
+### 6-2. DAG 인식 확인
+
+Airflow UI (`https://airflow.v2.mrxrunway.ai`) → DAG 목록에 `wind_power_prediction_v4` 가 있어야 합니다. 없으면 **Sync DAG 워크플로우** 로그 확인.
+
+---
+
+## 7. DAG 실행 (최초 학습)
+
+### 옵션 A — Airflow UI (권장)
+
+1. `wind_power_prediction_v4` DAG 클릭 → 우측 ▶ **Trigger DAG**
+2. 그래프 뷰에서 태스크가 순서대로 초록색으로 바뀌는지 확인:
+   ```
+   ensure_pull_secret → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
+   ```
+3. 각 태스크 클릭 → **Logs** 탭에서 표준출력 확인 (실패 시 에러 추적)
+
+### 옵션 B — IDE 에서 `run_dag.sh`
+
+> ⚠️ `run_dag.sh` 상단 `API_KEY=` 는 **Airflow 전용 JWT** (Runway API 토큰과 다름, 수명 ~24h). 실행 전에 본인 값으로 교체 필수.
+
+```bash
+cd /mnt/models/wind-power-prediction
+# 에디터에서 run_dag.sh 의 API_KEY 변경 후
 bash run_dag.sh
 ```
 
-스크립트가 REST API 로 DAG 를 trigger 하고 10초 간격으로 각 태스크 상태를 출력합니다. 성공하면 `=== 최종 상태: success ===` 로 끝나고 모델 다운로드 안내가 나옵니다.
-
 ### MLflow 에서 결과 확인
 
-`https://mlflow.v2.mrxrunway.ai` → Experiments → `rwyt-energy-forecasting.wind-power-prediction` → 최신 run 에서 metrics/params/artifacts 확인. Registered Models 에 `rwyt-energy-forecasting.wind-power-xgboost` 가 등록되어 있어야 합니다.
+`https://mlflow.v2.mrxrunway.ai` → Experiments → `rwyt-energy-forecasting.wind-power-prediction` → 최신 run 에서 파라미터/메트릭/아티팩트 확인. Registered Models 에 `rwyt-energy-forecasting.wind-power-xgboost` 가 등록되어 있어야 합니다.
 
 ---
 
-## 5. 모델 아티팩트를 PVC 로 복사
+## 8. 모델 아티팩트를 PVC 로 복사
 
 IDE 터미널에서:
 
 ```bash
 cd /mnt/models/wind-power-prediction
 
-# 사용 가능한 모델 목록 조회
-python download_model.py --list
-# → 사용 가능한 모델 (1개):
-#     m-aa64f3852e0845838624882dfc40794b
+# 3-3, 3-4 의 토큰이 아직 환경변수에 있는지 확인
+echo $OPENBAO_TOKEN | head -c 10   # 값이 보이면 OK
+echo $OPENBAO_NAMESPACE            # rwyt-energy-forecasting
 
-# 최신 모델 다운로드 (가장 최근 업로드된 m-xxx 자동 선택)
+# 사용 가능한 모델 목록
+python download_model.py --list
+
+# 최신 모델 다운로드
 python download_model.py
 ```
 
-완료되면 `/mnt/models/m-aa64f.../` 경로에 아래 파일들이 복사됩니다:
+완료되면 `/mnt/models/m-xxxxxxxx.../` 에 아티팩트 복사:
 ```
 /mnt/models/m-aa64f3852e0845838624882dfc40794b/
-  ├── MLmodel           # MLflow 메타
-  ├── model.ubj         # XGBoost 모델 바이너리
+  ├── MLmodel
+  ├── model.ubj
   ├── conda.yaml
   ├── python_env.yaml
   └── requirements.txt
 ```
 
-특정 모델을 지정하려면:
-```bash
-python download_model.py --model-id m-aa64f3852e0845838624882dfc40794b
-```
-
-> **중요**: 이 디렉토리 경로(`/mnt/models/{model-id}/`)가 다음 단계(모델 배포) 에서 "모델 경로" 로 지정됩니다.
+> 이 디렉토리 전체 경로가 다음 단계의 **모델 경로** 가 됩니다. 복사해두세요.
 
 ---
 
-## 6. 추론 엔드포인트 & 모델 배포 생성
+## 9. 추론 엔드포인트 & 모델 배포
 
-Runway 의 "추론 엔드포인트" 는 **한 URL 안에서 여러 모델 배포 간 트래픽을 분배** 할 수 있는 구조입니다. 엔드포인트 1개 → 모델 배포 N개 (A/B 테스트, 카나리아 배포).
+### 9-1. 엔드포인트 생성
 
-### 6-1. 엔드포인트 생성
-
-1. 좌측 **추론 엔드포인트** 메뉴
-2. 우측 상단 **+ 생성**
-3. 입력:
+1. Runway 콘솔 좌측 **추론 엔드포인트** → **+ 생성**
+2. 입력:
 
 | 필드 | 값 |
 |---|---|
 | 엔드포인트 이름 | `Wind Power Prediction` |
-| 엔드포인트 ID | `wind-power-prediction` (URL 에 쓰임) |
-| 서빙 런타임 | `MLServer` (XGBoost 지원) |
+| 엔드포인트 ID | `wind-power-prediction` |
+| 서빙 런타임 | `MLServer` |
 
-> **서빙 런타임 선택 가이드**
-> - **MLServer** : sklearn / XGBoost / LightGBM 등 전통 ML 모델
-> - **Triton Inference Server** : PyTorch / TF / ONNX 등 딥러닝 & 고성능 inference
->
-> 본 튜토리얼의 XGBoost 모델은 **MLServer** 가 맞습니다.
+> MLServer = sklearn/XGBoost/LightGBM 용. Triton = 딥러닝(PyTorch/TF/ONNX) 용. XGBoost 이므로 MLServer.
 
-### 6-2. 첫 모델 배포 추가
+### 9-2. 첫 모델 배포 추가
 
-엔드포인트 생성 완료 후 엔드포인트 상세 페이지에서 우측 상단 **모델 배포** 클릭. 다이얼로그에 입력:
+엔드포인트 상세 페이지 우측 상단 **모델 배포** 클릭:
 
 **기본 정보**
+
 | 필드 | 값 |
 |---|---|
 | 이름 | `Wind Power Model v1` |
 | ID | `wind-power-v1` |
-| 설명 | (선택) MLflow run `xgboost-2026xxxx...` 기반 |
 
 **모델 소스**
+
 | 필드 | 값 |
 |---|---|
-| 볼륨 | `wind-power-models` (1단계에서 만든 PVC) |
-| 모델 경로 | `/mnt/models/m-aa64f3852e0845838624882dfc40794b` (5단계에서 내려받은 모델 디렉토리 절대 경로) |
+| 볼륨 | `wind-power-models` |
+| 모델 경로 | `/mnt/models/m-aa64f3852e0845838624882dfc40794b` (8단계에서 복사한 디렉토리) |
 
 **컴퓨팅 리소스**
+
 | 필드 | 값 |
 |---|---|
 | CPU (millicores) | `500` |
 | Memory (MiB) | `1024` |
-| GPU 가속화 | Off |
+| GPU | Off |
 
-**스케일링**
-| 필드 | 값 |
-|---|---|
-| 복제본 | `1` |
+**스케일링**: 복제본 `1`
 
-**트래픽 설정**: 이 첫 배포는 자동으로 `1 (100%)` 할당됩니다.
-
-**생성** 클릭 → 엔드포인트 상세의 **모델 배포** 목록에 추가되고, 엔드포인트 상태가 **Healthy** 로 전환되면 서빙 준비 완료.
+**생성** 클릭 → 엔드포인트가 `Healthy` 로 전환되면 서빙 준비 완료.
 
 ---
 
-## 7. 추론 호출 테스트
+## 10. 추론 호출 테스트
 
-### 7-1. 추론 URL 확인 (매우 중요)
+### 10-1. 추론 URL 확인 (중요)
 
-**반드시 엔드포인트 상세 페이지 우측 "세부 정보" 섹션의 "추론 URL" 필드 값을 그대로 복사**해서 사용하세요. 환경마다 도메인이 다를 수 있으므로 아래 예시를 그대로 쓰면 404 가 날 수 있습니다.
+**엔드포인트 상세 페이지 > 세부 정보 > 추론 URL 필드 값을 그대로 복사**해서 사용. 아래 형식은 참고용일 뿐, 실제 도메인은 환경마다 다를 수 있습니다.
 
-참고용 형식 (실제 값은 UI 에서 확인):
+형식:
 ```
 https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>
 ```
 
-MLServer 는 **KServe V2 Inference Protocol** 을 따르므로 실제 호출 경로는 **복사한 URL 뒤에** `/v2/models/{deployment-id}/infer` 를 붙입니다 (`{deployment-id}` 는 6-2 에서 지정한 모델 배포 ID, 예시는 `wind-power-v1`).
+MLServer 는 **KServe V2 Inference Protocol** 을 따르므로 실제 호출 경로는 **복사한 URL + `/v2/models/<deployment-id>/infer`** (deployment-id = 9-2 의 `wind-power-v1`).
 
-### 7-2. 인증 토큰
+### 10-2. 인증 토큰
 
-3-4 단계에서 확보한 **Runway API 토큰** (코드의 `RUNWAY_API_KEY`) 을 `Authorization: Bearer` 헤더로 전달합니다. OpenBao 서비스 토큰(3-3) 과 다른 토큰이니 혼동 주의.
+3-4 단계의 **Runway API 토큰** (코드의 `RUNWAY_API_KEY`) 을 `Authorization: Bearer` 헤더로 전달. OpenBao 토큰(3-3) 과 다른 토큰입니다.
 
-### 7-3. 추론 요청 예시
+### 10-3. curl 예시
 
-turbine_data 컬럼에 맞춰 입력(예: `windspeed`, `winddirection`, `blade_pitch` 등) 을 구성합니다. `task_runner.py` 의 `drop_cols = ["id", "datetime", "uuid", "index", "wtg"]` 를 제외한 피처들이 X 입니다.
+입력 피처는 `task_runner.py` 의 전처리 로직과 동일하게, `turbine_data.csv` 의 컬럼에서 `id/datetime/uuid/index/wtg` 를 제외한 나머지를 학습 시 순서대로 사용합니다.
 
 ```bash
-TOKEN="eyJhbGciOi..."        # 3-4 단계의 Runway API 토큰 (RUNWAY_API_KEY 와 동일)
-ENDPOINT="<7-1 UI 에서 복사한 추론 URL>"
-DEPLOYMENT="wind-power-v1"   # 6-2 에서 만든 배포 ID
+TOKEN="eyJhbGciOi..."                          # 3-4 의 Runway API 토큰
+ENDPOINT="<10-1 UI 에서 복사한 추론 URL>"
+DEPLOYMENT="wind-power-v1"                     # 9-2 에서 만든 모델 배포 ID
 
 curl -X POST "${ENDPOINT}/v2/models/${DEPLOYMENT}/infer" \
   -H "Authorization: Bearer ${TOKEN}" \
@@ -324,51 +428,43 @@ curl -X POST "${ENDPOINT}/v2/models/${DEPLOYMENT}/infer" \
         "name": "input-0",
         "shape": [1, N],
         "datatype": "FP32",
-        "data": [[v1, v2, v3, ..., vN]]
+        "data": [[v1, v2, ..., vN]]
       }
     ]
   }'
 ```
 
-응답 예시 (KServe V2 포맷):
+응답 예:
 ```json
 {
   "model_name": "wind-power-v1",
   "outputs": [
-    {
-      "name": "output-0",
-      "datatype": "FP32",
-      "shape": [1, 1],
-      "data": [1234.56]
-    }
+    { "name": "output-0", "datatype": "FP32", "shape": [1, 1], "data": [1234.56] }
   ]
 }
 ```
 
-> **검증 필요 사항** (환경마다 다를 수 있음)
+> **환경별 검증 필요**
 > - 인증 방식 (Bearer / API key header / 무인증)
-> - `input-0` / `output-0` 텐서 이름 (MLServer 가 모델 MLmodel 시그너처에서 자동 추론)
-> - feature 개수 N 및 입력 순서
+> - `input-0` / `output-0` 텐서 이름 (MLServer 가 MLmodel 시그너처에서 자동 추론)
+> - feature 개수 N & 순서
 >
-> 첫 호출 시 400/422 오류가 나면 MLServer 로그(Argo CD 에서 Pod 로그 확인) 또는 [MLServer 문서](https://mlserver.readthedocs.io) 참고.
+> 400/422 나면 MLServer Pod 로그(엔드포인트 상세 → ArgoCD 링크) 에서 기대하는 입력 스키마 확인.
 
 ---
 
-## 8. 정리 / 오프보딩
+## 11. 정리 / 재실행
 
-튜토리얼을 마쳤다면 리소스를 정리합니다 (과금/쿼터 절약).
+### 삭제 순서
 
-### 삭제 순서 (의존성 순)
-
-1. **추론 엔드포인트** → 개별 모델 배포 삭제 → 엔드포인트 삭제
+1. **추론 엔드포인트** → 모델 배포 먼저 삭제 → 엔드포인트 삭제
 2. **애플리케이션** → `Wind Power IDE` 삭제 (볼륨은 남음)
-3. **스토리지** → `wind-power-models` 삭제 (또는 다음 실험에 재사용하려면 유지)
-4. **Gitea 저장소 Actions Secrets / K8s RoleBinding** 은 다른 튜토리얼/실험에 재사용 가능하므로 유지 권장
-5. **OpenBao KV 시크릿** 도 동일 — 재사용 권장
+3. **스토리지** → `wind-power-models` 삭제 (재사용할 거면 유지)
+4. **Gitea 저장소 / Actions Secrets / OpenBao 시크릿** 은 재사용 가능
 
-### 재실행 시
+### 재실행
 
-이미 모든 사전 준비가 되어 있으므로 **4단계(DAG 실행)** 부터 바로 시작하면 됩니다.
+같은 구성으로 다시 돌린다면 **7단계(DAG 실행)** 부터 바로 가능. 코드만 바꿀 경우 IDE 에서 수정 → `git push` → CI/CD 자동 동작 → Airflow 재실행.
 
 ---
 
@@ -376,14 +472,20 @@ curl -X POST "${ENDPOINT}/v2/models/${DEPLOYMENT}/infer" \
 
 | 증상 | 원인 가능성 & 대응 |
 |---|---|
-| Code Server 가 `Pending` 상태에서 넘어가지 않음 | 스토리지 클래스/access mode 가 클러스터에서 지원 안 됨. 스토리지 목록에서 볼륨 상태가 `Pending` 이면 스토리지 클래스 변경 필요 |
-| IDE 터미널에서 `/mnt/models` 에 쓰기 실패 (`permission denied`) | PVC 가 root 소유로 마운트됐는데 code-server 가 uid=1000 으로 실행 중. Code Server 배포 values 에 `podSecurityContext.fsGroup: 1000` 이 설정됐는지 확인. 또는 IDE 터미널에서 `sudo chown -R $(id -u):$(id -g) /mnt/models` (sudo 가능한 경우) |
-| IDE 에서 `git clone` 인증 실패 | Gitea username 에는 로그인명, password 란에는 **개인 액세스 토큰** 사용. 재입력이 잦으면 `git config --global credential.helper store` 로 캐시 |
-| `download_model.py` 에서 `permission denied` (S3) | `OPENBAO_NAMESPACE` 환경변수 누락 또는 토큰 만료. 3-3 재수행 |
-| `run_dag.sh` 실행 시 `401 Unauthorized` | 스크립트 내 `API_KEY` 가 기본값으로 남아있음 (수명 ~24h). 본인의 Airflow JWT 로 교체 |
-| 엔드포인트 생성 후 `Unhealthy` / `NotReady` | 모델 경로가 잘못됐거나 PVC 가 비어있음. ArgoCD 링크로 Pod 로그 확인 |
-| 추론 호출 시 404 | 7-1 에서 복사한 URL 이 아니라 문서 예시를 그대로 쓴 경우가 잦음. 엔드포인트 상세 UI 의 "추론 URL" 필드 값 + `/v2/models/{deployment-id}/infer` 조합인지 재확인 |
-| 추론 호출 시 401/403 | 토큰 형식/헤더명 재확인. OpenBao 토큰과 혼동했는지 확인 (3-3 vs 3-4). 필요 시 Runway UI 에서 **API 토큰** 재발급 |
-| 추론 호출 시 400/422 | payload 스키마(텐서 이름/shape) 가 모델 시그너처와 불일치. MLServer Pod 로그(ArgoCD 또는 애플리케이션 상세에서 접근) 에서 기대하는 입력 스키마 확인 |
+| Code Server 가 `Pending` 에서 안 넘어감 | 스토리지 클래스/access mode 미지원. 스토리지 목록 확인 후 클래스 변경 |
+| IDE 터미널에서 `/mnt/models` 쓰기 실패 (`permission denied`) | PVC fsGroup 이슈. Code Server values 의 `podSecurityContext.fsGroup: 1000` 확인. 또는 `sudo chown -R $(id -u):$(id -g) /mnt/models` (sudo 가능 시) |
+| `git clone` 인증 실패 | username 은 로그인명, password 는 **개인 액세스 토큰** (패스워드 아님). `credential.helper store` 설정 |
+| Gitea Actions 에서 `build-image.yml` 이 실패 | `IMAGE_TAG` Secret 값 확인. Gitea CR 에 같은 경로로 저장됨. 401 이면 `GIT_TOKEN` 의 packages write 권한 확인 |
+| Gitea Actions 에서 `sync-dag.yml` 이 `The target couldn't be found (404)` | `airflow-dags` 저장소가 빈 상태. README 자동 생성으로 초기화했는지 확인 |
+| `ensure_pull_secret` 태스크 실패 | OpenBao 의 `gitea_username`/`gitea_password` 등록 여부, `OPENBAO_TOKEN` 유효성 확인 |
+| `load_data` / `train_model` 등이 `FailedToRetrieveImagePullSecret` | `ensure_pull_secret` 가 만든 Secret 이 사라졌을 수 있음. DAG 재실행 (다음 run 에서 자동 복구) |
+| MLflow 에서 `permission denied` | `RUNWAY_API_KEY` 가 다른 프로젝트/만료된 토큰. 3-4 재수행 후 DAG 파일 갱신 → 재 push |
+| MLflow experiment 생성 `permission denied` | `EXPERIMENT_NAME` 이 `{프로젝트ID}.{실험명}` 규약 위반. `task_runner.py` 수정 |
+| `download_model.py` 에서 `permission denied` (S3) | `OPENBAO_TOKEN`/`OPENBAO_NAMESPACE` 미설정 또는 만료. 3-3 재수행 |
+| `run_dag.sh` 실행 시 `401 Unauthorized` | 스크립트 내 `API_KEY` 가 기본값 (수명 ~24h). 본인 Airflow JWT 로 교체 |
+| 엔드포인트 생성 후 `Unhealthy` / `NotReady` | 모델 경로가 잘못됐거나 PVC 가 비어있음. 추론 엔드포인트 상세 → ArgoCD 링크로 Pod 로그 확인 |
+| 추론 호출 404 | 10-1 의 UI 복사 URL + `/v2/models/<deployment-id>/infer` 조합인지 재확인 |
+| 추론 호출 401/403 | 토큰을 OpenBao 토큰과 혼동했는지 확인. Runway API 토큰 재발급(3-4) |
+| 추론 호출 400/422 | payload 스키마(텐서 이름/shape) 가 모델 시그너처와 불일치. MLServer 로그에서 기대 입력 확인 |
 
-코드 레벨 문제(태스크 실패 등) 는 [README § 트러블슈팅](./README.md#트러블슈팅) 을 참고하세요.
+코드 레벨 설명(아키텍처/상수/인증 흐름)은 [README.md](./README.md) 를 참고하세요.
