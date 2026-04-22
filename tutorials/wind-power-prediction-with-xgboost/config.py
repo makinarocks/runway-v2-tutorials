@@ -148,6 +148,10 @@ def load_secrets() -> dict:
 
     TLS:
       OPENBAO_VERIFY_TLS 정책 (기본 true) 적용.
+
+    Raises:
+      RuntimeError: OPENBAO_TOKEN / RUNWAY_PROJECT_ID 미설정, 토큰 만료(403),
+                    또는 KV 경로 없음(404). 각 케이스별로 구체적인 해결 안내 포함.
     """
     import hvac
     if not OPENBAO_TOKEN:
@@ -165,10 +169,27 @@ def load_secrets() -> dict:
     if OPENBAO_NAMESPACE:
         kwargs["namespace"] = OPENBAO_NAMESPACE
     client = hvac.Client(**kwargs)
-    resp = client.secrets.kv.v2.read_secret_version(
-        path=OPENBAO_SECRET_PATH,
-        mount_point=OPENBAO_KV_MOUNT,
-    )
+    try:
+        resp = client.secrets.kv.v2.read_secret_version(
+            path=OPENBAO_SECRET_PATH,
+            mount_point=OPENBAO_KV_MOUNT,
+        )
+    except hvac.exceptions.Forbidden as e:
+        # 403 — 가장 흔한 원인은 Runway 세션 재로그인으로 토큰 무효화됨
+        raise RuntimeError(
+            "OpenBao 403 Forbidden — OPENBAO_TOKEN 이 만료되었거나 무효합니다.\n"
+            "  1) OpenBao 콘솔(https://openbao.v2.mrxrunway.ai) 접속\n"
+            "  2) 우측 상단 프로필 → Copy token 으로 새 토큰 복사\n"
+            "  3) 아래 두 곳 모두 갱신 필요:\n"
+            "     - .env 파일의 OPENBAO_TOKEN\n"
+            "     - wind_power_prediction_v4.py 상단 OPENBAO_TOKEN (DAG 실행용)\n"
+            "  4) git push 후 Sync DAG 워크플로우 완료 확인 → Airflow 재파싱"
+        ) from e
+    except hvac.exceptions.InvalidPath as e:
+        raise RuntimeError(
+            f"OpenBao KV 경로 없음: {OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH}. "
+            "README 4단계 / WALKTHROUGH 5-4 참조하여 시크릿을 등록했는지 확인."
+        ) from e
     data = resp["data"]["data"]
     # ℹ️ 값은 로그에 남기지 않고 키 이름만 노출 (디버깅용)
     print(f"[config] OpenBao 로드: path={OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH} "

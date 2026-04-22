@@ -128,28 +128,41 @@ pip install --user boto3 hvac && export PATH="$HOME/.local/bin:$PATH"
 python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 ```
 
-### 3-3. OpenBao 서비스 토큰 확보 (AWS 키 조회용)
+### 3-3. OpenBao 서비스 토큰 확보 (AWS 키 + runway_api_key 조회용)
 
-`download_model.py` 와 DAG 의 `ensure_pull_secret` / `task_runner.py` 가 공통으로 사용합니다.
+이 토큰이 **튜토리얼 전체에서 하드코딩되는 유일한 시크릿** 입니다. 이 토큰으로 OpenBao 에 접근해 나머지 시크릿(AWS 키, runway_api_key 등) 을 조회하므로, 다른 시크릿을 코드에 넣지 않아도 됩니다.
 
 1. 새 탭에서 `https://openbao.v2.mrxrunway.ai` 접속
-2. 프로젝트 namespace (`rwyt-energy-forecasting`) 로 로그인 — 자동 발급되는 서비스 토큰을 **Copy token** 으로 복사
-3. IDE 터미널에 저장 (나중에 코드의 `OPENBAO_TOKEN` 상수에도 넣을 값):
-   ```bash
-   export OPENBAO_TOKEN="<콘솔에서 복사한 값>"
-   export OPENBAO_NAMESPACE="rwyt-energy-forecasting"
-   ```
+2. 프로젝트 namespace (`rwyt-energy-forecasting`) 로 로그인 — 자동 발급되는 서비스 토큰을 **우측 상단 프로필 → Copy token** 으로 복사
+3. 토큰 값을 메모 (5단계의 `.env` 와 DAG 상수에 각각 사용)
 
-> 토큰은 세션 만료 시 재발급 필요.
+> **토큰 만료 시 대응** (세션 종료 또는 재로그인 시 이전 토큰 무효화됨):
+> 1. OpenBao 콘솔 → 프로필 → Copy token 으로 새 토큰 복사
+> 2. `~/workspace/wind-power-prediction/.env` 의 `OPENBAO_TOKEN` 갱신
+> 3. `wind_power_prediction_v4.py` 상단의 `OPENBAO_TOKEN` 도 같이 갱신 (DAG 스케줄러용)
+> 4. `git add wind_power_prediction_v4.py && git commit -m "fix: refresh openbao token" && git push`
+> 5. Sync DAG 워크플로우 완료 후 Airflow UI 에서 DAG 재실행
+>
+> 토큰이 살아있는지 빠르게 확인:
+> ```bash
+> # 확인할 토큰을 환경변수로 세팅 (따옴표 안에 붙여넣기)
+> export OPENBAO_TOKEN="s.여기에_토큰_붙여넣기"
+>
+> curl -s -o /dev/null -w "%{http_code}\n" \
+>   -H "X-Vault-Token: $OPENBAO_TOKEN" \
+>   -H "X-Vault-Namespace: rwyt-energy-forecasting" \
+>   https://openbao.v2.mrxrunway.ai/v1/secret/data/wind-power
+> # 200 OK / 403 만료·권한없음 / 404 KV 경로 없음 / 401·400 토큰·네임스페이스 형식 오류
+> ```
 
 ### 3-4. Runway API 토큰 확보 (MLflow / 추론용)
 
-**OpenBao 토큰과 별개**입니다. 이 토큰은 DAG 가 MLflow 에 접근할 때, 그리고 추론 endpoint 호출 시 `Authorization: Bearer` 헤더로 사용됩니다.
+**OpenBao 토큰과 별개**입니다. 이 토큰은 DAG 가 MLflow 에 접근할 때, 그리고 추론 endpoint 호출 시 `Authorization: Bearer` 헤더로 사용됩니다. 이 값은 코드에 하드코딩되지 않고 **OpenBao 의 `runway_api_key` 키로 저장** 되어 `task_runner.py` / `test_inference.py` 가 런타임에 조회합니다 (5-4 참조).
 
 1. Runway 콘솔 우측 상단 **프로필 아이콘** → **API 토큰** (또는 **사용자 설정 > API 토큰**)
-2. **새 토큰 발급** → 값을 안전한 곳에 저장
+2. **새 토큰 발급** → 5-4 에서 OpenBao `secret/wind-power` 의 `runway_api_key` 값으로 등록
 
-> 같은 사용자가 콘솔에서 새 토큰을 발급받으면 **이전 토큰은 무효화**됩니다. 실행 도중 재발급했다면 아래 5단계에서 DAG 파일의 `RUNWAY_API_KEY` 도 같이 갱신해야 함.
+> 같은 사용자가 콘솔에서 새 토큰을 발급받으면 **이전 토큰은 무효화**됩니다. 실행 도중 재발급했다면 OpenBao 콘솔에서 `runway_api_key` 값만 갱신하면 됨 (DAG/코드 변경 불필요).
 
 ---
 
@@ -578,11 +591,12 @@ curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
 | `git clone` 인증 실패 | username 은 로그인명, password 는 **개인 액세스 토큰** (패스워드 아님). `credential.helper store` 설정 |
 | Gitea Actions 에서 `build-image.yml` 이 실패 | `IMAGE_TAG` Secret 값 확인. Gitea CR 에 같은 경로로 저장됨. 401 이면 `GIT_TOKEN` 의 packages write 권한 확인 |
 | Gitea Actions 에서 `sync-dag.yml` 이 `The target couldn't be found (404)` | `airflow-dags` 저장소가 빈 상태. README 자동 생성으로 초기화했는지 확인 |
-| `ensure_pull_secret` 태스크 실패 | OpenBao 의 `gitea_username`/`gitea_password` 등록 여부, `OPENBAO_TOKEN` 유효성 확인 |
+| `ensure_pull_secret` 태스크 `HTTPError: 403 Forbidden` | **`OPENBAO_TOKEN` 만료** (가장 흔한 원인). 3-3 의 "토큰 만료 시 대응" 절차 따라 `.env` + DAG 파일 양쪽 갱신 → push → Airflow 재트리거 |
+| `ensure_pull_secret` 태스크 `KeyError: 'gitea_username'` | OpenBao 에 `gitea_username` / `gitea_password` 키 미등록. WALKTHROUGH 5-4 재확인 |
 | `load_data` / `train_model` 등이 `FailedToRetrieveImagePullSecret` | `ensure_pull_secret` 가 만든 Secret 이 사라졌을 수 있음. DAG 재실행 (다음 run 에서 자동 복구) |
-| MLflow 에서 `permission denied` | `RUNWAY_API_KEY` 가 다른 프로젝트/만료된 토큰. 3-4 재수행 후 DAG 파일 갱신 → 재 push |
+| `log_to_mlflow` 에서 `permission denied` 또는 `Failed to validate offline token` | OpenBao `runway_api_key` 값이 만료됨. OpenBao 콘솔 → 해당 키 값만 새 Runway API 토큰으로 갱신 (3-4 재발급) — DAG/코드 변경 불필요 |
 | MLflow experiment 생성 `permission denied` | `EXPERIMENT_NAME` 이 `{프로젝트ID}.{실험명}` 규약 위반. `task_runner.py` 수정 |
-| `download_model.py` 에서 `permission denied` (S3) | `OPENBAO_TOKEN`/`OPENBAO_NAMESPACE` 미설정 또는 만료. 3-3 재수행 |
+| `download_model.py` 에서 `permission denied` (S3) | `OPENBAO_TOKEN` 만료 가능성. 3-3 의 "토큰 만료 시 대응" 참고. `config.py` 가 만료 시 친절한 에러 메시지 출력함 |
 | `run_dag.sh` 실행 시 `401 Unauthorized` | 스크립트 내 `API_KEY` 가 기본값 (수명 ~24h). 본인 Airflow JWT 로 교체 |
 | 엔드포인트 생성 후 `Unhealthy` / `NotReady` | 모델 경로가 잘못됐거나 PVC 가 비어있음. 추론 엔드포인트 상세 → ArgoCD 링크로 Pod 로그 확인 |
 | 추론 호출 404 | 10-1 의 UI 복사 URL + `/v2/models/<deployment-id>/infer` 조합인지 재확인 |
