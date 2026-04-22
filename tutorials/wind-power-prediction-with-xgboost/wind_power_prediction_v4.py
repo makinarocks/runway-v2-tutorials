@@ -104,6 +104,7 @@ OPENBAO_NAMESPACE   = "rwyt-energy-forecasting"       # Runway 프로젝트 이�
 OPENBAO_TOKEN       = "s.F6DrHBKlEENqMQvAAoBKjpJ8.detel9"
 OPENBAO_SECRET_PATH = "wind-power"                    # namespace 내부 상대 경로 (prefix 중복 불필요)
 OPENBAO_KV_MOUNT    = "secret"                        # KV v2 엔진 mount path (기본 "secret")
+OPENBAO_VERIFY_TLS  = "true"                          # 공식 CA 인증서 환경 기준. 자체 서명이면 "false"
 
 
 # =============================================================================
@@ -128,6 +129,7 @@ common_env_vars = [
     k8s.V1EnvVar(name="OPENBAO_TOKEN",          value=OPENBAO_TOKEN),
     k8s.V1EnvVar(name="OPENBAO_SECRET_PATH",    value=OPENBAO_SECRET_PATH),
     k8s.V1EnvVar(name="OPENBAO_KV_MOUNT",       value=OPENBAO_KV_MOUNT),
+    k8s.V1EnvVar(name="OPENBAO_VERIFY_TLS",     value=OPENBAO_VERIFY_TLS),
 ]
 
 
@@ -176,12 +178,15 @@ def ensure_pull_secret() -> None:
             "X-Vault-Namespace": OPENBAO_NAMESPACE,      # multi-tenant 시 namespace 지정
         },
     )
-    # SSL 검증 비활성화 — 내부 자체 서명 인증서 환경 기준 (task_runner.py 의
-    # OPENBAO_VERIFY_TLS=false 와 동일한 정책). 프로덕션에선 CA 번들 설정 후
-    # ssl.create_default_context() 를 그대로 쓰거나 cafile 지정 권장.
+    # SSL 검증 정책 — task_runner.py 의 hvac verify 와 동일한 OPENBAO_VERIFY_TLS env 를 공유.
+    # 기본값 "true" (공식 CA 서명 환경). 자체 서명 환경에선 DAG 상수에서 "false" 로 변경.
+    import os
+    verify_tls = os.getenv("OPENBAO_VERIFY_TLS", "true").lower() == "true"
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    if not verify_tls:
+        # 자체 서명 인증서 환경 — 검증을 끔 (MITM 방어 없음, 내부 폐쇄망 전제)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     with urllib.request.urlopen(req, context=ctx) as r:
         body = json.loads(r.read())
     # KV v2 응답 구조: { "data": { "data": { <실제 키-값> }, "metadata": {...} } }

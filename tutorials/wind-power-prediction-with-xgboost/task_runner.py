@@ -69,9 +69,11 @@ OPENBAO_TOKEN       = os.getenv("OPENBAO_TOKEN", "")
 OPENBAO_NAMESPACE   = os.getenv("OPENBAO_NAMESPACE", "")
 OPENBAO_SECRET_PATH = os.getenv("OPENBAO_SECRET_PATH", "wind-power")
 OPENBAO_KV_MOUNT    = os.getenv("OPENBAO_KV_MOUNT", "secret")
-# 내부 도메인이 자체 서명 인증서를 쓰는 환경이면 "false" 로 두면 됨.
-# 프로덕션에서는 CA 번들을 마운트하고 이 값을 "true" 또는 CA 파일 경로로 변경 권장.
-OPENBAO_VERIFY_TLS  = os.getenv("OPENBAO_VERIFY_TLS", "false").lower() == "true"
+# TLS 검증 정책.
+#   기본 "true" — Runway OpenBao(https://openbao.v2.mrxrunway.ai) 는 공식 CA 서명이므로
+#   시스템 CA 번들로 검증 가능. 검증을 끄면 MITM 위험.
+#   자체 서명 인증서를 쓰는 특수 환경에서만 "false" 로 오버라이드.
+OPENBAO_VERIFY_TLS  = os.getenv("OPENBAO_VERIFY_TLS", "true").lower() == "true"
 
 # AWS 키는 step 진입 시점에 초기화 (모듈 import 만으로 OpenBao 호출이 일어나지 않도록).
 # Dockerfile 빌드 시 `python task_runner.py --help` 같이 가볍게 import 해도 실패하지 않고,
@@ -88,8 +90,8 @@ def load_secrets() -> dict:
           "gitea_username": "...", "gitea_password": "..." }
 
     TLS 정책:
-        기본 OPENBAO_VERIFY_TLS=false — 내부 자체 서명 인증서 환경 기준.
-        프로덕션에선 CA 번들을 마운트하고 env 를 "true" 로 세팅.
+        기본 OPENBAO_VERIFY_TLS=true — 공식 CA 서명 인증서 환경 기준.
+        자체 서명 인증서 환경에서만 env 를 "false" 로 오버라이드.
     """
     import hvac
     kwargs = {"url": OPENBAO_URL, "token": OPENBAO_TOKEN, "verify": OPENBAO_VERIFY_TLS}
