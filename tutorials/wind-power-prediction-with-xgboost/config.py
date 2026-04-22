@@ -148,6 +148,10 @@ def load_secrets() -> dict:
 
     TLS:
       OPENBAO_VERIFY_TLS 정책 (기본 true) 적용.
+
+    Raises:
+      RuntimeError: OPENBAO_TOKEN / RUNWAY_PROJECT_ID 미설정, 토큰 만료(403),
+                    또는 KV 경로 없음(404). 각 케이스별로 구체적인 해결 안내 포함.
     """
     import hvac
     if not OPENBAO_TOKEN:

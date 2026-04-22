@@ -145,11 +145,14 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 >
 > 토큰이 살아있는지 빠르게 확인:
 > ```bash
+> # 확인할 토큰을 환경변수로 세팅 (따옴표 안에 붙여넣기)
+> export OPENBAO_TOKEN="s.여기에_토큰_붙여넣기"
+>
 > curl -s -o /dev/null -w "%{http_code}\n" \
 >   -H "X-Vault-Token: $OPENBAO_TOKEN" \
 >   -H "X-Vault-Namespace: rwyt-energy-forecasting" \
 >   https://openbao.v2.mrxrunway.ai/v1/secret/data/wind-power
-> # 200 = 유효, 403 = 만료, 404 = 시크릿 없음
+> # 200 OK / 403 만료·권한없음 / 404 KV 경로 없음 / 401·400 토큰·네임스페이스 형식 오류
 > ```
 
 ### 3-4. Runway API 토큰 확보 (MLflow / 추론용)
