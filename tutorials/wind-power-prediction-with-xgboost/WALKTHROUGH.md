@@ -100,21 +100,18 @@ Code Server 터미널을 엽니다 (`Terminal > New Terminal` 또는 ``Ctrl+` ``
 ### 3-1. 작업 디렉토리 이동 & git 기본 설정
 
 ```bash
-# 볼륨이 마운트된 경로 (세션이 끊겨도 파일 유지됨)
-cd /mnt/models
+# Code Server 홈 내 개발 디렉토리 (소스 코드 작업 공간)
+cd ~/workspace
 
 # git 사용자 정보 (본인 값으로)
 git config --global user.name  "gyuseon.han"
 git config --global user.email "gyuseon.han@makinarocks.ai"
 
 # 자격증명 캐시: 한 번 입력 후 재사용
-# 주의: `credential.helper store` 는 HOME 디렉토리에 평문 저장함.
-# 세션 보존 범위는 PVC 마운트 경로(/mnt/models) 아래만이므로,
-# HOME(/home/coder)이 PVC 에 있지 않으면 IDE 재시작 시 사라질 수 있음.
-# 영구 보존하려면 아래처럼 /mnt/models 안에 저장하는 편법도 가능:
-#   git config --global credential.helper "store --file=/mnt/models/.git-credentials"
 git config --global credential.helper store
 ```
+
+> **두 경로의 역할 구분** — `~/workspace` 는 소스 코드 개발용 (git clone 대상), `/mnt/models` 는 1단계에서 마운트한 PVC 로 **모델 아티팩트 전용** (8단계 `download_model.py` 출력). 섞지 마세요.
 
 ### 3-2. 파이썬 패키지 설치
 
@@ -196,12 +193,15 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 
 ### 5-1. 빈 저장소 clone
 
-IDE 터미널 (`cd /mnt/models`) 에서:
+IDE 터미널 (`cd ~/workspace`) 에서:
 
 ```bash
+cd ~/workspace
 git clone https://gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction.git
 cd wind-power-prediction
 ```
+
+> `~/workspace` 는 Code Server 의 홈 내 개발 디렉토리입니다. `/mnt/models` PVC 는 **모델 아티팩트 저장 전용** (8단계 `download_model.py` 의 출력 경로) 이며, 소스 코드를 거기에 두면 나중에 볼륨을 모델 배포 Pod 에 마운트할 때 코드가 섞여 혼란이 생깁니다.
 
 > username 에 본인 Gitea 로그인명, password 에 4-2 에서 만든 개인 액세스 토큰 입력. `credential.helper store` 덕분에 이번 한 번만 입력.
 
@@ -211,21 +211,21 @@ cd wind-power-prediction
 
 ```bash
 # 잠시 상위로 이동해서 reference 저장소 clone
-cd /mnt/models
+cd ~/workspace
 git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
 
 # 튜토리얼 소스를 본인 저장소로 복사 (.git 제외)
 cd reference/tutorials/wind-power-prediction-with-xgboost
 cp -r Dockerfile requirements.txt task_runner.py config.py .env.example \
       wind_power_prediction_v4.py download_model.py test_inference.py \
-      run_dag.sh dataset /mnt/models/wind-power-prediction/
-cp -r .gitea /mnt/models/wind-power-prediction/
+      run_dag.sh dataset ~/workspace/wind-power-prediction/
+cp -r .gitea ~/workspace/wind-power-prediction/
 
 # (선택) 문서도 함께
-cp README.md WALKTHROUGH.md /mnt/models/wind-power-prediction/
+cp README.md WALKTHROUGH.md ~/workspace/wind-power-prediction/
 
 # reference 는 삭제 가능
-cd /mnt/models && rm -rf reference
+cd ~/workspace && rm -rf reference
 ```
 
 ### 5-3. 본인 환경 값 설정 — **두 곳만** 수정
@@ -234,10 +234,10 @@ cd /mnt/models && rm -rf reference
 
 #### ① `.env` 생성 (IDE 스크립트용)
 
-VS Code 에서 `/mnt/models/wind-power-prediction/` 워크스페이스를 연 뒤 터미널에서:
+VS Code 에서 `~/workspace/wind-power-prediction/` 워크스페이스를 연 뒤 터미널에서:
 
 ```bash
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 cp .env.example .env
 ```
 
@@ -307,7 +307,7 @@ OpenBao 콘솔(3-3 에서 로그인한 탭) 에서:
 이제 본인 코드를 Gitea 로 올리면 Gitea Actions 가 자동으로 이미지를 빌드하고 DAG 파일을 airflow-dags 로 동기화합니다.
 
 ```bash
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 git add .
 git commit -m "feat: initial wind-power-prediction setup"
 git push origin main
@@ -354,7 +354,7 @@ Airflow UI (`https://airflow.v2.mrxrunway.ai`) → DAG 목록에 `wind_power_pre
 > 또는 브라우저에서 Airflow UI 로그인 후 DevTools → Network 탭에서 API 요청의 `Authorization: Bearer <token>` 헤더를 복사.
 
 ```bash
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 # 에디터에서 run_dag.sh 의 API_KEY 변경 후
 bash run_dag.sh
 ```
@@ -370,7 +370,7 @@ bash run_dag.sh
 IDE 터미널에서:
 
 ```bash
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 
 # 3-3, 3-4 의 토큰이 아직 환경변수에 있는지 확인
 echo $OPENBAO_TOKEN | head -c 10   # 값이 보이면 OK
@@ -448,14 +448,22 @@ python download_model.py
 
 ### 10-1. 추론 URL 확인 (중요)
 
-**엔드포인트 상세 페이지 > 세부 정보 > 추론 URL 필드 값을 그대로 복사**해서 사용. 아래 형식은 참고용일 뿐, 실제 도메인은 환경마다 다를 수 있습니다.
-
-형식:
+**엔드포인트 상세 페이지 > 세부 정보 > 요청 URL 을 그대로 복사**해서 사용. 형식:
 ```
-https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>
+https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>/v2/models/default/infer
 ```
 
-MLServer 는 **KServe V2 Inference Protocol** 을 따르므로 실제 호출 경로는 **복사한 URL + `/v2/models/<deployment-id>/infer`** (deployment-id = 9-2 의 `wind-power-v1`).
+- 앞 3 경로 세그먼트 (`<project-id>/<endpoint-id>/<deployment-id>`) = **Runway 라우팅 경로** — UI 에서 본인이 설정한 엔드포인트 ID / 배포 ID 가 반영됨
+- 끝 `/v2/models/default/infer` = **KServe V2 Inference Protocol 경로** — Runway MLServer 는 내부 모델명을 `default` 로 고정
+
+`test_inference.py` 는 이 URL 을 두 부분으로 나눠 사용:
+
+| 환경변수 | 값 |
+|---|---|
+| `INFERENCE_ENDPOINT` | `https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>` (끝의 `/v2/...` 이전까지) |
+| `DEPLOYMENT_ID` | `default` (KServe V2 의 model name, Runway 고정값) |
+
+> ⚠️ **"배포 ID" 가 두 번 등장** — 9-2 에서 만든 배포 ID (예: `wind-power-v1`) 는 URL 3번째 세그먼트로 **이미 INFERENCE_ENDPOINT 에 포함**됩니다. `DEPLOYMENT_ID` 환경변수는 별개의 개념 (KServe 모델명) 이며 Runway 에서는 항상 `default` 입니다.
 
 ### 10-2. 인증 토큰
 
@@ -475,11 +483,11 @@ IDE 터미널에서:
 
 ```bash
 # 저장소 루트에서 실행
-cd /mnt/models/wind-power-prediction
+cd ~/workspace/wind-power-prediction
 
 # .env 파일에 INFERENCE_ENDPOINT 추가 (한 번만)
-#   INFERENCE_ENDPOINT=<10-1 UI 에서 복사한 추론 URL>
-#   DEPLOYMENT_ID=wind-power-v1
+#   INFERENCE_ENDPOINT=<10-1 UI 요청 URL 에서 /v2/models/... 이전까지>
+#   DEPLOYMENT_ID=default            # Runway MLServer 고정값
 
 # CSV 첫 행으로 호출 — 토큰/엔드포인트 자동 로드
 python test_inference.py
@@ -496,7 +504,7 @@ python test_inference.py --dry-run
 [test_inference] 전체 행: 10060, 피처 수: 19
 [test_inference] 선택된 행 인덱스: [0]
 [test_inference] payload shape: [1, 19]
-[test_inference] POST https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/v2/models/wind-power-v1/infer  (verify_tls=True)
+[test_inference] POST https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/<deploy>/v2/models/default/infer  (verify_tls=True)
 [test_inference] 예측 vs 실제:
      row |      predicted |         actual |    abs_err
 -------------------------------------------------------
@@ -511,8 +519,8 @@ curl 은 `.env` 를 직접 읽지 못하므로 `RUNWAY_API_KEY` 는 별도로 ex
 
 ```bash
 export RUNWAY_API_KEY="eyJhbGciOi..."
-export INFERENCE_ENDPOINT="https://inference.v2.mrxrunway.ai/api/<proj>/<ep>"
-export DEPLOYMENT_ID="wind-power-v1"
+export INFERENCE_ENDPOINT="https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/<deploy>"
+export DEPLOYMENT_ID="default"          # Runway MLServer KServe V2 모델명 (고정)
 
 curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
   -H "Authorization: Bearer ${RUNWAY_API_KEY}" \
@@ -532,7 +540,7 @@ curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
 응답 예:
 ```json
 {
-  "model_name": "wind-power-v1",
+  "model_name": "default",
   "outputs": [
     { "name": "output-0", "datatype": "FP32", "shape": [1, 1], "data": [362.18] }
   ]

@@ -117,9 +117,14 @@ MODEL_REGISTRY_PATH = os.getenv("MODEL_REGISTRY_PATH", "/mnt/models")
 # =============================================================================
 # [추론] test_inference.py 전용
 # =============================================================================
-# 추론 엔드포인트 URL 과 배포 ID. 9단계(모델 배포) 완료 후 .env 에 채우기.
+# INFERENCE_ENDPOINT : 9단계(모델 배포) 완료 후 엔드포인트 상세 페이지에서 복사한 추론 URL.
+#                      형식: https://inference.v2.mrxrunway.ai/api/<project>/<endpoint>/<deployment>
+#                      (이 URL 에 이미 프로젝트/엔드포인트/배포 경로가 모두 포함됨)
+# DEPLOYMENT_ID      : KServe V2 경로의 models/<name>/infer 에서 <name> 에 들어가는 값.
+#                      Runway MLServer 는 내부 모델명을 "default" 로 고정하므로 기본값 default.
+#                      (UI 의 "배포 ID" 와 다른 개념 — 그 값은 INFERENCE_ENDPOINT URL 경로에 이미 포함)
 INFERENCE_ENDPOINT   = os.getenv("INFERENCE_ENDPOINT", "")
-DEPLOYMENT_ID        = os.getenv("DEPLOYMENT_ID", "wind-power-v1")
+DEPLOYMENT_ID        = os.getenv("DEPLOYMENT_ID", "default")
 INFERENCE_VERIFY_TLS = os.getenv("INFERENCE_VERIFY_TLS", "true").lower() == "true"
 
 
