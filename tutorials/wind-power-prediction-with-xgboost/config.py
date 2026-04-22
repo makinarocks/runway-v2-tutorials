@@ -150,6 +150,12 @@ def load_secrets() -> dict:
             "OPENBAO_TOKEN 이 비어 있습니다. "
             ".env / 환경변수 / DAG 상단 상수 중 하나에 설정하세요."
         )
+    if not RUNWAY_PROJECT_ID:
+        # Runway multi-tenant 에선 namespace 없이는 KV 조회가 실패 → 명확한 에러
+        raise RuntimeError(
+            "RUNWAY_PROJECT_ID 가 비어 있습니다. .env 또는 환경변수에 설정하세요. "
+            "(.env.example 참고)"
+        )
     kwargs = {"url": OPENBAO_URL, "token": OPENBAO_TOKEN, "verify": OPENBAO_VERIFY_TLS}
     if OPENBAO_NAMESPACE:
         kwargs["namespace"] = OPENBAO_NAMESPACE

@@ -75,7 +75,7 @@ DROP_COLS = ["id", "datetime", "uuid", "index", "wtg"]
 # 타겟 컬럼 — payload 에 포함하지 않고 예측값과 비교용으로 사용
 TARGET_COL = "activepower"
 
-# CSV 경로 기본값 — IDE 에서 저장소 루트에서 실행한다고 가정
+# CSV 경로 기본값 — 이 파일 위치 기준으로 해석하므로 어느 디렉토리에서 실행해도 동작
 DEFAULT_CSV = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "dataset", "turbine_data.csv"
 )
@@ -104,10 +104,15 @@ def resolve_token(cli_token: str | None) -> str | None:
     # OpenBao 호출은 토큰이 있을 때만 시도 (hvac import 비용 및 네트워크 호출 회피)
     try:
         data = load_secrets()
-        return data.get("runway_api_key")
     except Exception as e:
-        print(f"[test_inference] OpenBao 토큰 조회 실패: {e}", file=sys.stderr)
+        print(f"[test_inference] OpenBao 조회 실패: {e}", file=sys.stderr)
         return None
+    token = data.get("runway_api_key")
+    if not token:
+        print("[test_inference] OpenBao secret/wind-power 에 'runway_api_key' 키가 없음. "
+              "WALKTHROUGH 5-4 참조하여 추가하세요.", file=sys.stderr)
+        return None
+    return token
 
 
 def build_payload(feature_df: pd.DataFrame, tensor_name: str) -> dict:

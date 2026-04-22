@@ -63,9 +63,18 @@ def _initialize_secrets() -> None:
     조회 키:
       - aws_access_key_id / aws_secret_access_key → S3(MinIO) 인증
       - runway_api_key                             → MLflow 인증 (MLFLOW_TRACKING_TOKEN)
+
+    키가 빠져 있으면 raw KeyError 대신 튜토리얼 문서를 참조하도록 안내한다.
     """
     global RUNWAY_API_KEY, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
     data = load_secrets()
+    required = ["aws_access_key_id", "aws_secret_access_key", "runway_api_key"]
+    missing = [k for k in required if k not in data]
+    if missing:
+        raise RuntimeError(
+            f"OpenBao secret/wind-power 에 필수 키가 없음: {missing}. "
+            f"README 4단계 / WALKTHROUGH 5-4 참조하여 추가하세요."
+        )
     AWS_ACCESS_KEY_ID     = data["aws_access_key_id"]
     AWS_SECRET_ACCESS_KEY = data["aws_secret_access_key"]
     RUNWAY_API_KEY        = data["runway_api_key"]

@@ -76,9 +76,12 @@ OPENBAO_TOKEN     = "s.F6DrHBKlEENqMQvAAoBKjpJ8.detel9"
 # =============================================================================
 # [파생값] PROJECT_ID 와 Runway 인프라 규약으로부터 자동 계산 (수정 불필요)
 #
+# ⚠️ 여기서 계산하는 파생 규칙은 `config.py` 의 동일 상수와 **수동으로 동기** 되어야
+#    한다. DAG 는 airflow-dags 저장소로 sync 되어 Airflow 스케줄러에서 파싱되므로
+#    config.py 를 import 할 수 없어 규칙을 인라인 중복한다.
+#    config.py 에서 IMAGE / OPENBAO_URL 등을 바꾸면 이 섹션도 함께 갱신할 것.
+#
 # 본인 프로젝트가 아래 규약과 다른 경우(드묾)에만 개별 값을 편집.
-# task_runner.py 의 config.py 도 같은 규약으로 값을 파생하므로 여기만 바꿔도
-# 전체 파이프라인이 정합하게 동작한다.
 # =============================================================================
 NAMESPACE            = RUNWAY_PROJECT_ID
 IMAGE                = f"gitea.v2.mrxrunway.ai/{RUNWAY_PROJECT_ID}/wind-power-prediction:latest"
