@@ -28,3 +28,6 @@ mlartifacts/
 
 # Zip archives (source bundles generated per tutorial)
 tutorial_source.zip
+
+# Playwright MCP temp output
+.playwright-mcp/
