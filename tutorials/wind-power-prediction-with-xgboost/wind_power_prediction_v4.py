@@ -178,10 +178,11 @@ def ensure_pull_secret() -> None:
             "X-Vault-Namespace": OPENBAO_NAMESPACE,      # multi-tenant 시 namespace 지정
         },
     )
-    # SSL 검증 정책 — task_runner.py 의 hvac verify 와 동일한 OPENBAO_VERIFY_TLS env 를 공유.
-    # 기본값 "true" (공식 CA 서명 환경). 자체 서명 환경에선 DAG 상수에서 "false" 로 변경.
-    import os
-    verify_tls = os.getenv("OPENBAO_VERIFY_TLS", "true").lower() == "true"
+    # SSL 검증 정책 — DAG 모듈 상단의 OPENBAO_VERIFY_TLS 상수를 그대로 참조한다.
+    # (이 함수는 Airflow 스케줄러 Pod 내부의 @task 로 실행되므로 스케줄러 환경변수를
+    #  봐도 되지만, DAG 상수를 단일 진실 소스로 써서 task_runner Pod 용 common_env_vars
+    #  와 정의가 분기되지 않도록 맞춘다. DAG 상수를 바꾸면 양쪽에 동시 반영됨.)
+    verify_tls = OPENBAO_VERIFY_TLS.lower() == "true"
     ctx = ssl.create_default_context()
     if not verify_tls:
         # 자체 서명 인증서 환경 — 검증을 끔 (MITM 방어 없음, 내부 폐쇄망 전제)
