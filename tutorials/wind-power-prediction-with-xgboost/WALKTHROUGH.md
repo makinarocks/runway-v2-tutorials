@@ -36,6 +36,8 @@
 1. Runway 콘솔 → 워크스페이스(`Runway 2.0 Tutorials`) → 프로젝트 `energy-forecasting`
 2. 좌측 **스토리지** 메뉴 → 우측 상단 **+ 생성**
 
+![스토리지 목록](docs/images/01-storage-list.png)
+
 ### 입력 값
 
 | 필드 | 값 | 이유 |
@@ -44,6 +46,8 @@
 | 스토리지 클래스 | `ceph-filesystem` | RWX 지원 (IDE + 추론 Pod 동시 마운트 가능) |
 | 접근 모드 | `ReadWriteMany` | 여러 Pod 에서 동시 접근 |
 | 크기 | `5` (GiB) | 모델 아티팩트/개발 작업 공간 |
+
+![볼륨 생성 폼](docs/images/02-storage-create-form.png)
 
 **생성** 버튼 → 목록에 `Bound` 상태로 표시되면 성공.
 
@@ -55,6 +59,8 @@
 
 1. 좌측 **카탈로그** → **Code server** 카드 → 우측 상단 **+ 애플리케이션 생성**
 
+![애플리케이션 목록](docs/images/03-applications-list.png)
+
 ### 기본 정보
 
 | 필드 | 값 (예시) |
@@ -62,6 +68,8 @@
 | 이름 | `Wind Power IDE` |
 | ID | `wind-power-ide` |
 | 설명 | (선택) `풍력 예측 튜토리얼 개발용 VS Code` |
+
+![애플리케이션 생성 폼](docs/images/04-application-create-form.png)
 
 ### Helm values.yaml 수정
 
@@ -145,8 +153,11 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 
 **OpenBao 토큰과 별개**입니다. 이 토큰은 DAG 가 MLflow 에 접근할 때, 그리고 추론 endpoint 호출 시 `Authorization: Bearer` 헤더로 사용됩니다. 이 값은 코드에 하드코딩되지 않고 **OpenBao 의 `runway_api_key` 키로 저장** 되어 `task_runner.py` / `test_inference.py` 가 런타임에 조회합니다 (5-4 참조).
 
-1. Runway 콘솔 우측 상단 **프로필 아이콘** → **API 토큰** (또는 **사용자 설정 > API 토큰**)
-2. **새 토큰 발급** → 5-4 에서 OpenBao `secret/wind-power` 의 `runway_api_key` 값으로 등록
+1. Runway 콘솔 우측 상단 **프로필 아이콘** → **계정 설정** → 좌측 **액세스 키** 탭 → **API 키**
+2. 기존 키가 없으면 **+ 생성**, 있으면 값을 그대로 복사. (사용자당 최대 1개)
+3. 5-4 에서 OpenBao `secret/wind-power` 의 `runway_api_key` 값으로 등록
+
+![액세스 키 > API 키](docs/images/11-access-keys.png)
 
 > 같은 사용자가 콘솔에서 새 토큰을 발급받으면 **이전 토큰은 무효화**됩니다. 실행 도중 재발급했다면 OpenBao 콘솔에서 `runway_api_key` 값만 갱신하면 됨 (DAG/코드 변경 불필요).
 
@@ -411,6 +422,9 @@ python download_model.py
 ### 9-1. 엔드포인트 생성
 
 1. Runway 콘솔 좌측 **추론 엔드포인트** → **+ 생성**
+
+![추론 엔드포인트 목록](docs/images/05-inference-endpoints-list.png)
+
 2. 입력:
 
 | 필드 | 값 |
@@ -419,11 +433,15 @@ python download_model.py
 | 엔드포인트 ID | `wind-power-prediction` |
 | 서빙 런타임 | `MLServer` |
 
+![엔드포인트 생성 폼](docs/images/06-inference-endpoint-create-form.png)
+
 > MLServer = sklearn/XGBoost/LightGBM 용. Triton = 딥러닝(PyTorch/TF/ONNX) 용. XGBoost 이므로 MLServer.
 
 ### 9-2. 첫 모델 배포 추가
 
 엔드포인트 상세 페이지 우측 상단 **모델 배포** 클릭:
+
+![엔드포인트 상세 — 모델 배포 버튼](docs/images/07-endpoint-detail.png)
 
 **기본 정보**
 
@@ -449,6 +467,8 @@ python download_model.py
 
 **스케일링**: 복제본 `1`
 
+![모델 배포 폼](docs/images/10-model-deployment-form.png)
+
 **생성** 클릭 → 엔드포인트가 `Healthy` 로 전환되면 서빙 준비 완료.
 
 ---
@@ -457,7 +477,11 @@ python download_model.py
 
 ### 10-1. 추론 URL 확인 (중요)
 
-**엔드포인트 상세 페이지 > 세부 정보 > 요청 URL 을 그대로 복사**해서 사용. 형식:
+**엔드포인트 상세 페이지 > 해당 배포 (예: `test2`) 클릭 > 하단 "직접 API 접근" 섹션의 요청 URL 을 그대로 복사**해서 사용. 이 섹션은 브라우저에서 바로 payload 를 붙여넣어 호출 테스트도 할 수 있습니다.
+
+![직접 API 접근 — 요청 URL + 요청 본문 + 요청 전송](docs/images/09-direct-api-access.png)
+
+형식:
 ```
 https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>/v2/models/default/infer
 ```
@@ -473,6 +497,10 @@ https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>
 | `DEPLOYMENT_ID` | `default` (KServe V2 의 model name, Runway 고정값) |
 
 > ⚠️ **"배포 ID" 가 두 번 등장** — 9-2 에서 만든 배포 ID (예: `wind-power-v1`) 는 URL 3번째 세그먼트로 **이미 INFERENCE_ENDPOINT 에 포함**됩니다. `DEPLOYMENT_ID` 환경변수는 별개의 개념 (KServe 모델명) 이며 Runway 에서는 항상 `default` 입니다.
+
+참고로 배포 상세 페이지 상단에서 모델 소스/리소스/스케일링 등 전반 설정도 확인 가능:
+
+![모델 배포 상세](docs/images/08-deployment-detail.png)
 
 ### 10-2. 인증 토큰
 
