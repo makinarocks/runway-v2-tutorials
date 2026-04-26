@@ -140,7 +140,7 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 > 토큰이 살아있는지 빠르게 확인:
 > ```bash
 > # 확인할 토큰을 환경변수로 세팅 (따옴표 안에 붙여넣기)
-> export OPENBAO_TOKEN="s.여기에_토큰_붙여넣기"
+> export OPENBAO_TOKEN="s.<your-openbao-token>"
 >
 > curl -s -o /dev/null -w "%{http_code}\n" \
 >   -H "X-Vault-Token: $OPENBAO_TOKEN" \
@@ -248,9 +248,9 @@ cp README.md WALKTHROUGH.md ~/workspace/wind-power-prediction/
 cd ~/workspace && rm -rf reference
 ```
 
-### 5-3. 본인 환경 값 설정 — **두 곳만** 수정
+### 5-3. 본인 환경 값 설정 — **세 줄만** 수정
 
-설정이 `config.py` + `.env` + DAG 상단 2줄로 중앙화돼 있어서, 사용자가 손댈 곳은 **딱 2곳**입니다. 나머지 값(`NAMESPACE`, `IMAGE`, `EXPERIMENT_NAME`, `MODEL_NAME`, `S3_ARTIFACT_PREFIX` 등)은 `RUNWAY_PROJECT_ID` 한 값에서 자동 파생됩니다.
+설정이 `config.py` + `.env` + DAG 상단 3줄로 중앙화돼 있어서, 사용자가 손댈 값은 **`RUNWAY_PROJECT_ID` + `RUNWAY_BASE_DOMAIN` + `OPENBAO_TOKEN` 3개**입니다. 나머지 값(`NAMESPACE`, `IMAGE`, 모든 서비스 URL, `EXPERIMENT_NAME`, `MODEL_NAME`, `S3_ARTIFACT_PREFIX` 등)은 이 3개에서 자동 파생됩니다.
 
 #### ① `.env` 생성 (IDE 스크립트용)
 
@@ -264,41 +264,38 @@ cp .env.example .env
 `.env` 를 열어 아래 값 설정:
 
 ```dotenv
-RUNWAY_PROJECT_ID=your-project-id          # 본인 프로젝트 ID
-OPENBAO_TOKEN=<3-2 에서 복사한 OpenBao 서비스 토큰>
+RUNWAY_PROJECT_ID=your-project-id              # 본인 프로젝트 ID
+RUNWAY_BASE_DOMAIN=your-runway-domain.com      # Runway 베이스 도메인 (예: v2.example.com)
+OPENBAO_TOKEN=s.<3-2 에서 복사한 OpenBao 서비스 토큰>
 
 # 추론 테스트는 9단계(모델 배포) 이후 채움. 지금은 비워둬도 됨.
 INFERENCE_ENDPOINT=
-DEPLOYMENT_ID=wind-power-v1
+DEPLOYMENT_ID=default
 ```
 
 > `.env` 는 `.gitignore` 에 포함되어 있어 Gitea 로 커밋되지 않습니다. IDE 스크립트 (`download_model.py`, `test_inference.py`) 가 `config.py` 를 통해 자동 로드합니다.
 
 #### ② DAG 파일 상수 (`wind_power_prediction_v4.py`)
 
-파일 상단 [사용자 설정] 섹션의 **2줄만** 수정:
+파일 상단 [사용자 설정] 섹션의 **3줄만** 수정:
 
 ```python
-RUNWAY_PROJECT_ID = "your-project-id"       # ← 본인 프로젝트 ID
-OPENBAO_TOKEN     = "<3-2 의 OpenBao 서비스 토큰>"
+RUNWAY_PROJECT_ID  = "your-project-id"               # ← 본인 프로젝트 ID
+RUNWAY_BASE_DOMAIN = "your-runway-domain.com"        # ← Runway 베이스 도메인
+OPENBAO_TOKEN      = "s.<3-2 의 OpenBao 서비스 토큰>"
 ```
 
-그 아래 [파생값] 섹션은 **수정 불필요** — f-string 으로 `NAMESPACE`, `IMAGE`, `OPENBAO_NAMESPACE` 등이 자동 계산됩니다.
+그 아래 [파생값] 섹션은 **수정 불필요** — f-string 으로 `NAMESPACE`, `IMAGE`, `OPENBAO_URL`, `OPENBAO_NAMESPACE` 등이 자동 계산됩니다 (`gitea.{BASE_DOMAIN}/...`, `https://openbao.{BASE_DOMAIN}` 형태).
 
 > **왜 DAG 는 `.env` 를 못 쓰나?** DAG 는 `airflow-dags` 저장소로 sync 되어 Airflow 스케줄러 Pod 에서 실행됩니다. 사용자의 `.env` 파일은 거기 없으므로 DAG 상단에 직접 하드코딩해야 합니다. 대신 주입되는 env 는 최소한 (`RUNWAY_PROJECT_ID`, `OPENBAO_TOKEN`, `DAG_RUN_ID`) 으로 줄어 있습니다.
 
 > **`RUNWAY_API_KEY` 는?** 코드에서 완전히 빠졌습니다 — `task_runner.py` 와 `test_inference.py` 가 OpenBao `secret/wind-power` 의 `runway_api_key` 값을 런타임에 조회합니다 (5-4 참조).
 
-#### ③ `.gitea/workflows/sync-dag.yml` (조직명이 다른 경우에만)
+#### ③ `.gitea/workflows/` (수정 불필요 — 자동 도출)
 
-`API_BASE` 안의 조직명이 본인 Gitea 조직과 일치해야 합니다:
-```yaml
-# .gitea/workflows/sync-dag.yml 내 API_BASE 라인
-API_BASE="https://gitea.<your-runway-domain>/api/v1/repos/your-project-id/airflow-dags"
-#                                                   └── 여기를 본인 조직명으로
-```
-> 튜토리얼 예시대로 `your-project-id` 조직이면 수정 불필요.
-> `build-image.yml` 은 Secrets 값(`IMAGE_TAG`)을 쓰므로 워크플로우 파일 자체 수정은 불필요.
+`build-image.yml` 은 `IMAGE_TAG` Secret 에서 호스트를 자동 추출하고, `sync-dag.yml` 은 현재 저장소의 `github.server_url` + `github.repository_owner` 컨텍스트에서 Gitea 호스트와 조직명을 자동 도출합니다. **YAML 자체는 손댈 필요 없음.**
+
+> 단, **`airflow-dags` 가 같은 조직 안에 있다는 전제**입니다 (Runway 기본 구성). 다른 조직에 있으면 `sync-dag.yml` 의 `DAGS_REPO=` 라인을 본인 환경에 맞게 수정.
 
 ### 5-4. OpenBao 에 시크릿 등록
 
