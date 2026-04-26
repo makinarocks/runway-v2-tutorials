@@ -60,21 +60,26 @@ from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperato
 from kubernetes.client import models as k8s
 
 # =============================================================================
-# [사용자 설정] ⚠️ 이 **두 줄만** 본인 값으로 수정하면 됩니다.
+# [사용자 설정] ⚠️ 이 **세 줄만** 본인 값으로 수정하면 됩니다.
 #
-# RUNWAY_PROJECT_ID 는 Runway 프로젝트 식별자다. Runway 규약상 아래가 모두 동일:
-#   - K8s namespace, S3 bucket, OpenBao namespace, Gitea 조직명
-# 따라서 이 하나의 값으로 NAMESPACE / IMAGE / S3 / OpenBao 경로가 전부 파생된다.
+# RUNWAY_PROJECT_ID  : Runway 프로젝트 식별자. Runway 규약상 아래가 모두 동일:
+#                      K8s namespace, S3 bucket, OpenBao namespace, Gitea 조직명
+#                      이 하나로 NAMESPACE / IMAGE / S3 / OpenBao 경로가 전부 파생.
 #
-# OPENBAO_TOKEN 은 콘솔 namespace 로그인 시 자동 발급되는 서비스 토큰.
-# 이 토큰 하나로 AWS 키 / Gitea 자격증명 / runway_api_key 를 모두 OpenBao 에서 조회.
+# RUNWAY_BASE_DOMAIN : Runway 가 배포된 베이스 도메인 (예: v2.example.com).
+#                      gitea.<base>, openbao.<base> 등 서비스 호스트가 파생됨.
+#
+# OPENBAO_TOKEN      : 콘솔 namespace 로그인 시 자동 발급되는 서비스 토큰.
+#                      이 토큰 하나로 AWS 키 / Gitea 자격증명 / runway_api_key
+#                      를 모두 OpenBao 에서 조회.
 # =============================================================================
-RUNWAY_PROJECT_ID = "rwyt-energy-forecasting"
-OPENBAO_TOKEN     = "s.F6DrHBKlEENqMQvAAoBKjpJ8.detel9"
+RUNWAY_PROJECT_ID  = "your-project-id"
+RUNWAY_BASE_DOMAIN = "your-runway-domain.com"
+OPENBAO_TOKEN      = "s.<your-openbao-token>"
 
 
 # =============================================================================
-# [파생값] PROJECT_ID 와 Runway 인프라 규약으로부터 자동 계산 (수정 불필요)
+# [파생값] PROJECT_ID + BASE_DOMAIN 과 Runway 규약으로부터 자동 계산 (수정 불필요)
 #
 # ⚠️ 여기서 계산하는 파생 규칙은 `config.py` 의 동일 상수와 **수동으로 동기** 되어야
 #    한다. DAG 는 airflow-dags 저장소로 sync 되어 Airflow 스케줄러에서 파싱되므로
@@ -84,10 +89,10 @@ OPENBAO_TOKEN     = "s.F6DrHBKlEENqMQvAAoBKjpJ8.detel9"
 # 본인 프로젝트가 아래 규약과 다른 경우(드묾)에만 개별 값을 편집.
 # =============================================================================
 NAMESPACE            = RUNWAY_PROJECT_ID
-IMAGE                = f"gitea.v2.mrxrunway.ai/{RUNWAY_PROJECT_ID}/wind-power-prediction:latest"
+IMAGE                = f"gitea.{RUNWAY_BASE_DOMAIN}/{RUNWAY_PROJECT_ID}/wind-power-prediction:latest"
 IMAGE_PULL_SECRET    = "gitea-registry-pull"
 
-OPENBAO_URL          = "https://openbao.v2.mrxrunway.ai"
+OPENBAO_URL          = f"https://openbao.{RUNWAY_BASE_DOMAIN}"
 OPENBAO_NAMESPACE    = RUNWAY_PROJECT_ID
 OPENBAO_SECRET_PATH  = "wind-power"
 OPENBAO_KV_MOUNT     = "secret"
@@ -189,9 +194,12 @@ def ensure_pull_secret() -> None:
     #    auth 필드는 "username:password" 를 base64 로 인코딩한 값.
     # ─────────────────────────────────────────────────────────────────────
     auth_b64 = base64.b64encode(f"{gitea_username}:{gitea_password}".encode()).decode()
+    # Gitea Container Registry 호스트는 IMAGE 변수에서 첫 '/' 이전 부분 사용
+    # (BASE_DOMAIN 만 바꿔도 IMAGE 가 자동 갱신되므로 여기 하드코딩 불필요)
+    gitea_registry_host = IMAGE.split("/", 1)[0]
     docker_config = {
         "auths": {
-            "gitea.v2.mrxrunway.ai": {
+            gitea_registry_host: {
                 "username": gitea_username,
                 "password": gitea_password,
                 "auth": auth_b64,
@@ -299,7 +307,7 @@ def make_pod_operator(
 #   - tags            : Airflow UI 필터링용 라벨
 # =============================================================================
 default_args = {
-    "owner": "gyuseon.han@makinarocks.ai",
+    "owner": "your-email@example.com",
     "depends_on_past": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=5),

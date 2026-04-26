@@ -10,7 +10,7 @@
 #
 # API_KEY 획득 방법 (Airflow 3.0 기준 — 실제 경로는 환경별로 다를 수 있음):
 #   A) /auth/token 엔드포인트 사용:
-#      curl -X POST "https://airflow.v2.mrxrunway.ai/auth/token" \
+#      curl -X POST "https://airflow.<your-runway-domain>/auth/token" \
 #        -H "Content-Type: application/json" \
 #        -d '{"username":"<계정>","password":"<비밀번호>"}'
 #      응답의 access_token 값을 아래 API_KEY 에 붙여넣기
@@ -21,10 +21,10 @@
 # ⚠️ 이 파일에 API_KEY 가 하드코딩되어 있음 — 저장소를 public 으로 전환하지 말 것.
 # 프로덕션 환경에서는 env 파일이나 Secrets Manager 로 분리 권장.
 
-AIRFLOW_HOST="https://airflow.v2.mrxrunway.ai"
+AIRFLOW_HOST="https://airflow.<your-runway-domain>"
 DAG_ID="wind_power_prediction_v4"
-# ↓ 본인 Airflow JWT 로 교체 (기본값은 만료된 예시)
-API_KEY="eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzIiwiaXNzIjpbXSwiYXVkIjoiYXBhY2hlLWFpcmZsb3ciLCJuYmYiOjE3NzQzNjMyNzMsImV4cCI6MTc3NDQ0OTY3MywiaWF0IjoxNzc0MzYzMjczfQ.kIJs59Ik8_lkkUrlG3YQo3CsV5bxyu3T7ZDc6Tq_2IpzZZM_7O_gH0w-1nmV0UZ2CdS88lq6RGA6cA5Ce2EY4g"
+# ↓ 본인 Airflow JWT 로 교체
+API_KEY="<your-airflow-jwt-token>"
 
 echo "=== DAG 실행: ${DAG_ID} ==="
 

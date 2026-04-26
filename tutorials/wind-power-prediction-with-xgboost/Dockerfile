@@ -17,8 +17,8 @@
 #   `python task_runner.py --step <load_data|load_model|...>` 명령을 실행합니다.
 #
 # 수동 빌드 (CI 없이 테스트할 때):
-#   docker build -t gitea.v2.mrxrunway.ai/<org>/wind-power-prediction:latest .
-#   docker push gitea.v2.mrxrunway.ai/<org>/wind-power-prediction:latest
+#   docker build -t gitea.<your-runway-domain>/<your-project-id>/wind-power-prediction:latest .
+#   docker push gitea.<your-runway-domain>/<your-project-id>/wind-power-prediction:latest
 
 # Python 3.11 slim — 런타임 이미지 크기 최소화용 변종
 FROM python:3.11-slim

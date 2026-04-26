@@ -17,11 +17,11 @@
 
 | 항목 | 확인 방법 | 참고 |
 |---|---|---|
-| Runway 콘솔 로그인 가능 (Google SSO) | `https://runway.v2.mrxrunway.ai` 접속 | 워크스페이스에 초대되어 있어야 함 |
-| 대상 프로젝트 존재 | 본 가이드 예시: `energy-forecasting` (namespace `rwyt-energy-forecasting`, S3 bucket 동일) | |
+| Runway 콘솔 로그인 가능 (Google SSO) | `https://runway.<your-runway-domain>` 접속 | 워크스페이스에 초대되어 있어야 함 |
+| 대상 프로젝트 존재 | 본 가이드 예시: `<your-project>` (namespace `your-project-id`, S3 bucket 동일) | |
 | K8s RoleBinding (`runway-applications:airflow-scheduler` → edit on `<project-ns>`) | `kubectl get rolebinding -n <project-ns>` | [README § 사전 준비 3](./README.md#3-airflow-scheduler-sa에-rolebinding-생성) |
-| Gitea 조직(`rwyt-energy-forecasting`) 존재 + `airflow-dags` 저장소 기본 생성됨 | Gitea UI 에서 확인 | DAG sync 대상 |
-| OpenBao namespace (`rwyt-energy-forecasting`) 로그인 가능 & KV v2 엔진(`secret`) enabled | `https://openbao.v2.mrxrunway.ai` 로그인 후 Secret Engines 메뉴 | [README § 사전 준비 4](./README.md#4-openbao-시크릿-등록) |
+| Gitea 조직(`your-project-id`) 존재 + `airflow-dags` 저장소 기본 생성됨 | Gitea UI 에서 확인 | DAG sync 대상 |
+| OpenBao namespace (`your-project-id`) 로그인 가능 & KV v2 엔진(`secret`) enabled | `https://openbao.<your-runway-domain>` 로그인 후 Secret Engines 메뉴 | [README § 사전 준비 4](./README.md#4-openbao-시크릿-등록) |
 
 위가 다 OK 라면 **1단계부터** 시작.
 
@@ -33,7 +33,7 @@
 
 ### UI 경로
 
-1. Runway 콘솔 → 워크스페이스(`Runway 2.0 Tutorials`) → 프로젝트 `energy-forecasting`
+1. Runway 콘솔 → 워크스페이스(`<your-workspace>`) → 프로젝트 `<your-project>`
 2. 좌측 **스토리지** 메뉴 → 우측 상단 **+ 생성**
 
 ![스토리지 목록](docs/images/01-storage-list.png)
@@ -91,7 +91,7 @@ persistence:
 ```yaml
 httpRoute:
   enabled: true
-  hostname: "wind-power-ide.v2.mrxrunway.ai"
+  hostname: "wind-power-ide.<your-runway-domain>"
   hostnames: []
 ```
 
@@ -126,8 +126,8 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 
 이 토큰이 **튜토리얼 전체에서 하드코딩되는 유일한 시크릿** 입니다. 이 토큰으로 OpenBao 에 접근해 나머지 시크릿(AWS 키, runway_api_key 등) 을 조회하므로, 다른 시크릿을 코드에 넣지 않아도 됩니다.
 
-1. 새 탭에서 `https://openbao.v2.mrxrunway.ai` 접속
-2. 프로젝트 namespace (`rwyt-energy-forecasting`) 로 로그인 — 자동 발급되는 서비스 토큰을 **우측 상단 프로필 → Copy token** 으로 복사
+1. 새 탭에서 `https://openbao.<your-runway-domain>` 접속
+2. 프로젝트 namespace (`your-project-id`) 로 로그인 — 자동 발급되는 서비스 토큰을 **우측 상단 프로필 → Copy token** 으로 복사
 3. 토큰 값을 메모 (5단계의 `.env` 와 DAG 상수에 각각 사용)
 
 > **토큰 만료 시 대응** (세션 종료 또는 재로그인 시 이전 토큰 무효화됨):
@@ -144,8 +144,8 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 >
 > curl -s -o /dev/null -w "%{http_code}\n" \
 >   -H "X-Vault-Token: $OPENBAO_TOKEN" \
->   -H "X-Vault-Namespace: rwyt-energy-forecasting" \
->   https://openbao.v2.mrxrunway.ai/v1/secret/data/wind-power
+>   -H "X-Vault-Namespace: your-project-id" \
+>   https://openbao.<your-runway-domain>/v1/secret/data/wind-power
 > # 200 OK / 403 만료·권한없음 / 404 KV 경로 없음 / 401·400 토큰·네임스페이스 형식 오류
 > ```
 
@@ -167,10 +167,10 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 
 ### 4-1. 저장소 생성
 
-1. `https://gitea.v2.mrxrunway.ai` 접속 & 로그인
+1. `https://gitea.<your-runway-domain>` 접속 & 로그인
 2. 우측 상단 **+ → 새 저장소 만들기**
 3. 입력:
-   - **소유자**: `rwyt-energy-forecasting` (프로젝트와 동일 조직)
+   - **소유자**: `your-project-id` (프로젝트와 동일 조직)
    - **저장소 이름**: `wind-power-prediction`
    - **가시성**: Private (팀 내부)
    - **저장소 초기화**: 체크 (README.md 자동 생성 — 첫 커밋 용)
@@ -186,7 +186,7 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 |---|---|
 | `GIT_USERNAME` | 본인의 Gitea 로그인명 |
 | `GIT_TOKEN` | 개인 액세스 토큰 (패키지 write + `airflow-dags` write 권한) |
-| `IMAGE_TAG` | `gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction:latest` |
+| `IMAGE_TAG` | `gitea.<your-runway-domain>/your-project-id/wind-power-prediction:latest` |
 
 > 개인 액세스 토큰 발급: Gitea 우측 상단 아바타 → **Settings → Applications → Manage Access Tokens → Generate New Token** — UI 에서 **Repository**(write) 와 **Package**(write) 권한 체크. 이 토큰은 저장소 push 와 Container Registry push 양쪽에 동시에 쓰입니다.
 
@@ -210,14 +210,14 @@ IDE 터미널에서:
 cd ~/workspace
 
 # git 사용자 정보 (본인 값으로) — 이 세션에서 최초 1회만
-git config --global user.name  "gyuseon.han"
-git config --global user.email "gyuseon.han@makinarocks.ai"
+git config --global user.name  "your-name"
+git config --global user.email "your-email@example.com"
 
 # 자격증명 캐시: username/토큰 한 번 입력 후 재사용
 git config --global credential.helper store
 
 # 4-1 에서 만든 본인 저장소 clone
-git clone https://gitea.v2.mrxrunway.ai/rwyt-energy-forecasting/wind-power-prediction.git
+git clone https://gitea.<your-runway-domain>/your-project-id/wind-power-prediction.git
 cd wind-power-prediction
 ```
 
@@ -264,7 +264,7 @@ cp .env.example .env
 `.env` 를 열어 아래 값 설정:
 
 ```dotenv
-RUNWAY_PROJECT_ID=rwyt-energy-forecasting          # 본인 프로젝트 ID
+RUNWAY_PROJECT_ID=your-project-id          # 본인 프로젝트 ID
 OPENBAO_TOKEN=<3-2 에서 복사한 OpenBao 서비스 토큰>
 
 # 추론 테스트는 9단계(모델 배포) 이후 채움. 지금은 비워둬도 됨.
@@ -279,7 +279,7 @@ DEPLOYMENT_ID=wind-power-v1
 파일 상단 [사용자 설정] 섹션의 **2줄만** 수정:
 
 ```python
-RUNWAY_PROJECT_ID = "rwyt-energy-forecasting"       # ← 본인 프로젝트 ID
+RUNWAY_PROJECT_ID = "your-project-id"       # ← 본인 프로젝트 ID
 OPENBAO_TOKEN     = "<3-2 의 OpenBao 서비스 토큰>"
 ```
 
@@ -294,10 +294,10 @@ OPENBAO_TOKEN     = "<3-2 의 OpenBao 서비스 토큰>"
 `API_BASE` 안의 조직명이 본인 Gitea 조직과 일치해야 합니다:
 ```yaml
 # .gitea/workflows/sync-dag.yml 내 API_BASE 라인
-API_BASE="https://gitea.v2.mrxrunway.ai/api/v1/repos/rwyt-energy-forecasting/airflow-dags"
+API_BASE="https://gitea.<your-runway-domain>/api/v1/repos/your-project-id/airflow-dags"
 #                                                   └── 여기를 본인 조직명으로
 ```
-> 튜토리얼 예시대로 `rwyt-energy-forecasting` 조직이면 수정 불필요.
+> 튜토리얼 예시대로 `your-project-id` 조직이면 수정 불필요.
 > `build-image.yml` 은 Secrets 값(`IMAGE_TAG`)을 쓰므로 워크플로우 파일 자체 수정은 불필요.
 
 ### 5-4. OpenBao 에 시크릿 등록
@@ -338,13 +338,13 @@ git push origin main
 Gitea 저장소 **Actions** 탭 진입. 두 워크플로우가 실행됩니다:
 
 - **Build and Push to Gitea CR** — Docker 이미지 빌드 & CR 푸시 (`task_runner.py`, `Dockerfile`, `requirements.txt`, `dataset/**` 변경 시)
-- **Sync DAG to airflow-dags** — DAG 파일을 `rwyt-energy-forecasting/airflow-dags` 저장소의 `wind_power_prediction/v4/wind_power_prediction.py` 로 복사 (`wind_power_prediction_v4.py` 변경 시)
+- **Sync DAG to airflow-dags** — DAG 파일을 `your-project-id/airflow-dags` 저장소의 `wind_power_prediction/v4/wind_power_prediction.py` 로 복사 (`wind_power_prediction_v4.py` 변경 시)
 
 두 개 모두 녹색 체크로 끝날 때까지 대기 (이미지 빌드는 5-10분).
 
 ### 6-2. DAG 인식 확인
 
-Airflow UI (`https://airflow.v2.mrxrunway.ai`) → DAG 목록에 `wind_power_prediction_v4` 가 있어야 합니다. 없으면 **Sync DAG 워크플로우** 로그 확인.
+Airflow UI (`https://airflow.<your-runway-domain>`) → DAG 목록에 `wind_power_prediction_v4` 가 있어야 합니다. 없으면 **Sync DAG 워크플로우** 로그 확인.
 
 ---
 
@@ -365,7 +365,7 @@ Airflow UI (`https://airflow.v2.mrxrunway.ai`) → DAG 목록에 `wind_power_pre
 >
 > **Airflow JWT 획득 방법** (Airflow 3.0 기준):
 > ```bash
-> curl -X POST "https://airflow.v2.mrxrunway.ai/auth/token" \
+> curl -X POST "https://airflow.<your-runway-domain>/auth/token" \
 >   -H "Content-Type: application/json" \
 >   -d '{"username":"<본인 계정>","password":"<본인 비밀번호>"}'
 > ```
@@ -381,7 +381,7 @@ bash run_dag.sh
 
 ### MLflow 에서 결과 확인
 
-`https://mlflow.v2.mrxrunway.ai` → Experiments → `rwyt-energy-forecasting.wind-power-prediction` → 최신 run 에서 파라미터/메트릭/아티팩트 확인. Registered Models 에 `rwyt-energy-forecasting.wind-power-xgboost` 가 등록되어 있어야 합니다.
+`https://mlflow.<your-runway-domain>` → Experiments → `your-project-id.wind-power-prediction` → 최신 run 에서 파라미터/메트릭/아티팩트 확인. Registered Models 에 `your-project-id.wind-power-xgboost` 가 등록되어 있어야 합니다.
 
 ---
 
@@ -394,7 +394,7 @@ cd ~/workspace/wind-power-prediction
 
 # 3-2 의 OpenBao 토큰이 아직 환경변수/.env 에 있는지 확인 (3-3 Runway API 토큰은 OpenBao 에 저장됨)
 echo $OPENBAO_TOKEN | head -c 10   # 값이 보이면 OK
-echo $OPENBAO_NAMESPACE            # rwyt-energy-forecasting
+echo $OPENBAO_NAMESPACE            # your-project-id
 
 # 사용 가능한 모델 목록
 python download_model.py --list
@@ -483,7 +483,7 @@ python download_model.py
 
 형식:
 ```
-https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>/v2/models/default/infer
+https://inference.<your-runway-domain>/api/<project-id>/<endpoint-id>/<deployment-id>/v2/models/default/infer
 ```
 
 - 앞 3 경로 세그먼트 (`<project-id>/<endpoint-id>/<deployment-id>`) = **Runway 라우팅 경로** — UI 에서 본인이 설정한 엔드포인트 ID / 배포 ID 가 반영됨
@@ -493,7 +493,7 @@ https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>
 
 | 환경변수 | 값 |
 |---|---|
-| `INFERENCE_ENDPOINT` | `https://inference.v2.mrxrunway.ai/api/<project-id>/<endpoint-id>/<deployment-id>` (끝의 `/v2/...` 이전까지) |
+| `INFERENCE_ENDPOINT` | `https://inference.<your-runway-domain>/api/<project-id>/<endpoint-id>/<deployment-id>` (끝의 `/v2/...` 이전까지) |
 | `DEPLOYMENT_ID` | `default` (KServe V2 의 model name, Runway 고정값) |
 
 > ⚠️ **"배포 ID" 가 두 번 등장** — 9-2 에서 만든 배포 ID (예: `wind-power-v1`) 는 URL 3번째 세그먼트로 **이미 INFERENCE_ENDPOINT 에 포함**됩니다. `DEPLOYMENT_ID` 환경변수는 별개의 개념 (KServe 모델명) 이며 Runway 에서는 항상 `default` 입니다.
@@ -541,7 +541,7 @@ python test_inference.py --dry-run
 [test_inference] 전체 행: 10060, 피처 수: 19
 [test_inference] 선택된 행 인덱스: [0]
 [test_inference] payload shape: [1, 19]
-[test_inference] POST https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/<deploy>/v2/models/default/infer  (verify_tls=True)
+[test_inference] POST https://inference.<your-runway-domain>/api/<proj>/<ep>/<deploy>/v2/models/default/infer  (verify_tls=True)
 [test_inference] 예측 vs 실제:
      row |      predicted |         actual |    abs_err
 -------------------------------------------------------
@@ -556,7 +556,7 @@ curl 은 `.env` 를 직접 읽지 못하므로 `RUNWAY_API_KEY` 는 별도로 ex
 
 ```bash
 export RUNWAY_API_KEY="eyJhbGciOi..."
-export INFERENCE_ENDPOINT="https://inference.v2.mrxrunway.ai/api/<proj>/<ep>/<deploy>"
+export INFERENCE_ENDPOINT="https://inference.<your-runway-domain>/api/<proj>/<ep>/<deploy>"
 export DEPLOYMENT_ID="default"          # Runway MLServer KServe V2 모델명 (고정)
 
 curl -X POST "${INFERENCE_ENDPOINT}/v2/models/${DEPLOYMENT_ID}/infer" \
