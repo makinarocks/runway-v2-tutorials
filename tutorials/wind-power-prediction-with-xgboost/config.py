@@ -47,14 +47,20 @@ except ImportError:
 #   이 한 값으로 NAMESPACE / S3_BUCKET / OPENBAO_NAMESPACE / IMAGE 등이 자동 파생.
 RUNWAY_PROJECT_ID = os.getenv("RUNWAY_PROJECT_ID", "")
 
+# RUNWAY_BASE_DOMAIN : Runway 가 배포된 베이스 도메인 (예: runway.example.com).
+#   이 값으로 mlflow./s3./openbao./gitea./inference./airflow./runway. 등의 서비스
+#   엔드포인트가 모두 자동 파생된다. 본인 환경의 베이스 도메인으로 교체 필수.
+RUNWAY_BASE_DOMAIN = os.getenv("RUNWAY_BASE_DOMAIN", "")
+
 
 # =============================================================================
-# [Runway 인프라] 고정 엔드포인트 (거의 안 바뀜, env 로 override 가능)
+# [Runway 인프라] 베이스 도메인에서 파생되는 서비스 엔드포인트
+# 각 값은 env 로 override 가능 — 비표준 호스트명을 쓰는 경우.
 # =============================================================================
-MLFLOW_TRACKING_URI    = os.getenv("MLFLOW_TRACKING_URI",    "https://mlflow.v2.mrxrunway.ai")
-MLFLOW_S3_ENDPOINT_URL = os.getenv("MLFLOW_S3_ENDPOINT_URL", "https://s3.v2.mrxrunway.ai")
-OPENBAO_URL            = os.getenv("OPENBAO_URL",            "https://openbao.v2.mrxrunway.ai")
-GITEA_REGISTRY_HOST    = os.getenv("GITEA_REGISTRY_HOST",    "gitea.v2.mrxrunway.ai")
+MLFLOW_TRACKING_URI    = os.getenv("MLFLOW_TRACKING_URI",    f"https://mlflow.{RUNWAY_BASE_DOMAIN}")
+MLFLOW_S3_ENDPOINT_URL = os.getenv("MLFLOW_S3_ENDPOINT_URL", f"https://s3.{RUNWAY_BASE_DOMAIN}")
+OPENBAO_URL            = os.getenv("OPENBAO_URL",            f"https://openbao.{RUNWAY_BASE_DOMAIN}")
+GITEA_REGISTRY_HOST    = os.getenv("GITEA_REGISTRY_HOST",    f"gitea.{RUNWAY_BASE_DOMAIN}")
 
 
 # =============================================================================
@@ -118,7 +124,7 @@ MODEL_REGISTRY_PATH = os.getenv("MODEL_REGISTRY_PATH", "/mnt/models")
 # [추론] test_inference.py 전용
 # =============================================================================
 # INFERENCE_ENDPOINT : 9단계(모델 배포) 완료 후 엔드포인트 상세 페이지에서 복사한 추론 URL.
-#                      형식: https://inference.v2.mrxrunway.ai/api/<project>/<endpoint>/<deployment>
+#                      형식: https://inference.<runway-base-domain>/api/<project>/<endpoint>/<deployment>
 #                      (이 URL 에 이미 프로젝트/엔드포인트/배포 경로가 모두 포함됨)
 # DEPLOYMENT_ID      : KServe V2 경로의 models/<name>/infer 에서 <name> 에 들어가는 값.
 #                      Runway MLServer 는 내부 모델명을 "default" 로 고정하므로 기본값 default.
@@ -165,6 +171,12 @@ def load_secrets() -> dict:
             "RUNWAY_PROJECT_ID 가 비어 있습니다. .env 또는 환경변수에 설정하세요. "
             "(.env.example 참고)"
         )
+    if not RUNWAY_BASE_DOMAIN:
+        # OPENBAO_URL 이 'https://openbao.' 형태로 잘못 만들어진 채 호출되면 DNS 에러가 남
+        raise RuntimeError(
+            "RUNWAY_BASE_DOMAIN 이 비어 있습니다. .env 또는 환경변수에 설정하세요. "
+            "(예: RUNWAY_BASE_DOMAIN=runway.example.com — 본인 환경의 Runway 베이스 도메인)"
+        )
     kwargs = {"url": OPENBAO_URL, "token": OPENBAO_TOKEN, "verify": OPENBAO_VERIFY_TLS}
     if OPENBAO_NAMESPACE:
         kwargs["namespace"] = OPENBAO_NAMESPACE
@@ -178,7 +190,7 @@ def load_secrets() -> dict:
         # 403 — 가장 흔한 원인은 Runway 세션 재로그인으로 토큰 무효화됨
         raise RuntimeError(
             "OpenBao 403 Forbidden — OPENBAO_TOKEN 이 만료되었거나 무효합니다.\n"
-            "  1) OpenBao 콘솔(https://openbao.v2.mrxrunway.ai) 접속\n"
+            f"  1) OpenBao 콘솔({OPENBAO_URL}) 접속\n"
             "  2) 우측 상단 프로필 → Copy token 으로 새 토큰 복사\n"
             "  3) 아래 두 곳 모두 갱신 필요:\n"
             "     - .env 파일의 OPENBAO_TOKEN\n"

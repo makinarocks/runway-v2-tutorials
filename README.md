@@ -35,6 +35,6 @@ runway-v2-tutorial/
 
 ## 공통 인프라 (Runway v2)
 
-- **Keycloak**: `keycloak.v2.mrxrunway.ai` — OIDC 토큰 발급
-- **MLflow**: 클러스터 내부 URL 접근 + Host 헤더를 `mlflow.v2.mrxrunway.ai` 로 패치
+- **Keycloak**: `keycloak.<your-runway-domain>` — OIDC 토큰 발급
+- **MLflow**: 클러스터 내부 URL 접근 + Host 헤더를 `mlflow.<your-runway-domain>` 로 패치
 - **PVC**: `/mnt/model-registry` — 모델 아티팩트 영구 저장소

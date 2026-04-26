@@ -22,8 +22,8 @@
 #   GIT_USERNAME : Gitea 로그인 사용자명
 #   GIT_TOKEN    : Gitea 접근 토큰 (airflow-dags 저장소 write 권한 필요)
 #
-# 주의:
-#   본인 프로젝트 조직명이 rwyt-energy-forecasting 과 다르면 아래 API_BASE 의 조직명 수정 필요.
+# Gitea 호스트와 조직명은 워크플로우 컨텍스트(github.server_url / github.repository_owner)
+# 에서 자동 추출하므로 별도 설정 불필요. airflow-dags 저장소 이름이 다르면 아래 DAGS_REPO 수정.
 
 name: Sync DAG to airflow-dags
 
@@ -72,7 +72,10 @@ jobs:
           API_TOKEN: ${{ secrets.GIT_TOKEN }}
         run: |
           DEST_PATH="wind_power_prediction/v4/wind_power_prediction.py"
-          API_BASE="https://gitea.v2.mrxrunway.ai/api/v1/repos/rwyt-energy-forecasting/airflow-dags"
+          # Gitea 호스트는 현재 저장소가 호스팅된 곳 (github.server_url),
+          # 조직명은 현재 저장소 owner 와 동일한 조직 (airflow-dags 도 같은 조직 전제).
+          DAGS_REPO="airflow-dags"
+          API_BASE="${{ github.server_url }}/api/v1/repos/${{ github.repository_owner }}/${DAGS_REPO}"
           BRANCH="main"
 
           # DAG 파일을 base64로 인코딩 (-w 0: 개행 없이 한 줄로)

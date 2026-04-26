@@ -37,6 +37,6 @@ load_model ─┘
 
 ## Runway v2 Infrastructure Context
 
-- **Keycloak**: `keycloak.v2.mrxrunway.ai` — MLflow 인증용 OIDC 토큰 발급
-- **MLflow**: 클러스터 내부 URL(`runway-exp-mlflow-tracking-server.runway-applications.svc.cluster.local`)로 접근하되, Host 헤더를 외부 도메인(`mlflow.v2.mrxrunway.ai`)으로 설정
+- **Keycloak**: `keycloak.<runway-base-domain>` — MLflow 인증용 OIDC 토큰 발급
+- **MLflow**: 클러스터 내부 URL(`runway-exp-mlflow-tracking-server.runway-applications.svc.cluster.local`)로 접근하되, Host 헤더를 외부 도메인(`mlflow.<runway-base-domain>`)으로 설정
 - **PVC**: `/mnt/model-registry` — 모델 아티팩트 영구 저장소
