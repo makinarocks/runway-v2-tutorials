@@ -73,7 +73,7 @@ def _initialize_secrets() -> None:
     if missing:
         raise RuntimeError(
             f"OpenBao secret/wind-power 에 필수 키가 없음: {missing}. "
-            f"README 4단계 / WALKTHROUGH 5-4 참조하여 추가하세요."
+            f"README Step 6 참조하여 추가하세요."
         )
     AWS_ACCESS_KEY_ID     = data["aws_access_key_id"]
     AWS_SECRET_ACCESS_KEY = data["aws_secret_access_key"]

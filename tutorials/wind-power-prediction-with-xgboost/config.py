@@ -200,7 +200,7 @@ def load_secrets() -> dict:
     except hvac.exceptions.InvalidPath as e:
         raise RuntimeError(
             f"OpenBao KV 경로 없음: {OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH}. "
-            "README 4단계 / WALKTHROUGH 5-4 참조하여 시크릿을 등록했는지 확인."
+            "README Step 6 참조하여 시크릿을 등록했는지 확인."
         ) from e
     data = resp["data"]["data"]
     # ℹ️ 값은 로그에 남기지 않고 키 이름만 노출 (디버깅용)
