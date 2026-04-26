@@ -47,7 +47,7 @@ except ImportError:
 #   이 한 값으로 NAMESPACE / S3_BUCKET / OPENBAO_NAMESPACE / IMAGE 등이 자동 파생.
 RUNWAY_PROJECT_ID = os.getenv("RUNWAY_PROJECT_ID", "")
 
-# RUNWAY_BASE_DOMAIN : Runway 가 배포된 베이스 도메인 (예: v2.example.com).
+# RUNWAY_BASE_DOMAIN : Runway 가 배포된 베이스 도메인 (예: runway.example.com).
 #   이 값으로 mlflow./s3./openbao./gitea./inference./airflow./runway. 등의 서비스
 #   엔드포인트가 모두 자동 파생된다. 본인 환경의 베이스 도메인으로 교체 필수.
 RUNWAY_BASE_DOMAIN = os.getenv("RUNWAY_BASE_DOMAIN", "")
@@ -175,7 +175,7 @@ def load_secrets() -> dict:
         # OPENBAO_URL 이 'https://openbao.' 형태로 잘못 만들어진 채 호출되면 DNS 에러가 남
         raise RuntimeError(
             "RUNWAY_BASE_DOMAIN 이 비어 있습니다. .env 또는 환경변수에 설정하세요. "
-            "(예: RUNWAY_BASE_DOMAIN=v2.example.com — 본인 환경의 Runway 베이스 도메인)"
+            "(예: RUNWAY_BASE_DOMAIN=runway.example.com — 본인 환경의 Runway 베이스 도메인)"
         )
     kwargs = {"url": OPENBAO_URL, "token": OPENBAO_TOKEN, "verify": OPENBAO_VERIFY_TLS}
     if OPENBAO_NAMESPACE:

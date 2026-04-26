@@ -122,7 +122,7 @@ OpenBao 콘솔에서 프로젝트 namespace(`<your-project-id>`)로 로그인 �
 cp .env.example .env
 # 편집기로 .env 열어서 아래 3값 설정
 #   RUNWAY_PROJECT_ID=<본인 프로젝트 ID>
-#   RUNWAY_BASE_DOMAIN=<Runway 베이스 도메인 — 예: v2.example.com>
+#   RUNWAY_BASE_DOMAIN=<Runway 베이스 도메인 — 예: runway.example.com>
 #   OPENBAO_TOKEN=<위 4단계에서 복사한 서비스 토큰>
 ```
 

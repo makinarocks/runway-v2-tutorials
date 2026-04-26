@@ -66,7 +66,7 @@ from kubernetes.client import models as k8s
 #                      K8s namespace, S3 bucket, OpenBao namespace, Gitea 조직명
 #                      이 하나로 NAMESPACE / IMAGE / S3 / OpenBao 경로가 전부 파생.
 #
-# RUNWAY_BASE_DOMAIN : Runway 가 배포된 베이스 도메인 (예: v2.example.com).
+# RUNWAY_BASE_DOMAIN : Runway 가 배포된 베이스 도메인 (예: runway.example.com).
 #                      gitea.<base>, openbao.<base> 등 서비스 호스트가 파생됨.
 #
 # OPENBAO_TOKEN      : 콘솔 namespace 로그인 시 자동 발급되는 서비스 토큰.

@@ -265,7 +265,7 @@ cp .env.example .env
 
 ```dotenv
 RUNWAY_PROJECT_ID=your-project-id              # 본인 프로젝트 ID
-RUNWAY_BASE_DOMAIN=your-runway-domain.com      # Runway 베이스 도메인 (예: v2.example.com)
+RUNWAY_BASE_DOMAIN=your-runway-domain.com      # Runway 베이스 도메인 (예: runway.example.com)
 OPENBAO_TOKEN=s.<3-2 에서 복사한 OpenBao 서비스 토큰>
 
 # 추론 테스트는 9단계(모델 배포) 이후 채움. 지금은 비워둬도 됨.
