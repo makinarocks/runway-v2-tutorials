@@ -22,7 +22,7 @@
 # 프로덕션 환경에서는 env 파일이나 Secrets Manager 로 분리 권장.
 
 AIRFLOW_HOST="https://airflow.<your-runway-domain>"
-DAG_ID="wind_power_prediction_v4"
+DAG_ID="wind_power_prediction"
 # ↓ 본인 Airflow JWT 로 교체
 API_KEY="<your-airflow-jwt-token>"
 

@@ -15,7 +15,7 @@
 #   - dataset/**          (학습 데이터 변경)
 #
 # 주의:
-#   DAG 파일(wind_power_prediction_v4.py) 변경은 이 워크플로우를 트리거하지 않는다.
+#   DAG 파일(wind_power_prediction.py) 변경은 이 워크플로우를 트리거하지 않는다.
 #   DAG 만 수정한 경우는 sync-dag.yml 이 airflow-dags 저장소로 복사하는 경로로만 반영되고
 #   이미지는 재빌드되지 않는다 (의도적 — DAG 는 스케줄러에서 파싱되고 이미지는 Pod 실행에 사용).
 #

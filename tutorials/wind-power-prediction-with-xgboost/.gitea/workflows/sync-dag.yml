@@ -1,6 +1,6 @@
 # .gitea/workflows/sync-dag.yml
 #
-# DAG 자동 동기화 — wind_power_prediction_v4.py → airflow-dags 저장소
+# DAG 자동 동기화 — wind_power_prediction.py → airflow-dags 저장소
 #
 # 이 워크플로우가 필요한 이유:
 #   Airflow 는 git-sync 를 통해 airflow-dags 저장소를 감시하도록 설정되어 있다.
@@ -9,13 +9,13 @@
 #   호출해 airflow-dags 저장소의 해당 경로에 자동 복사한다.
 #
 # 동작 방식:
-#   wind_power_prediction_v4.py 가 main 브랜치에 push 되면
-#     → Gitea contents API 로 airflow-dags/wind_power_prediction/v4/wind_power_prediction.py
+#   wind_power_prediction.py 가 main 브랜치에 push 되면
+#     → Gitea contents API 로 airflow-dags/wind_power_prediction/wind_power_prediction.py
 #       를 create-or-update
 #     → Airflow 의 git-sync 가 몇 초 뒤 해당 파일을 가져와 DAG 재파싱
 #
 # 트리거 경로:
-#   - wind_power_prediction_v4.py 만 (dataset/Dockerfile/requirements 변경은 이 워크플로우를 트리거하지 않음)
+#   - wind_power_prediction.py 만 (dataset/Dockerfile/requirements 변경은 이 워크플로우를 트리거하지 않음)
 #   - 이미지 변경 사항은 별도 build-image.yml 이 처리 (두 워크플로우는 독립적)
 #
 # 사전 준비 (Gitea 저장소 Settings > Secrets and Variables > Actions):
@@ -32,7 +32,7 @@ on:
     branches:
       - main
     paths:
-      - "wind_power_prediction_v4.py"
+      - "wind_power_prediction.py"
 
 jobs:
   sync-dag:
@@ -71,7 +71,7 @@ jobs:
         env:
           API_TOKEN: ${{ secrets.GIT_TOKEN }}
         run: |
-          DEST_PATH="wind_power_prediction/v4/wind_power_prediction.py"
+          DEST_PATH="wind_power_prediction/wind_power_prediction.py"
           # Gitea 호스트는 현재 저장소가 호스팅된 곳 (github.server_url),
           # 조직명은 현재 저장소 owner 와 동일한 조직 (airflow-dags 도 같은 조직 전제).
           DAGS_REPO="airflow-dags"
@@ -79,7 +79,7 @@ jobs:
           BRANCH="main"
 
           # DAG 파일을 base64로 인코딩 (-w 0: 개행 없이 한 줄로)
-          CONTENT=$(base64 -w 0 wind_power_prediction_v4.py 2>/dev/null || base64 wind_power_prediction_v4.py | tr -d '\n')
+          CONTENT=$(base64 -w 0 wind_power_prediction.py 2>/dev/null || base64 wind_power_prediction.py | tr -d '\n')
 
           # 기존 파일 SHA 조회 (업데이트 시 필요)
           FILE_SHA=$(curl -s \
@@ -87,7 +87,7 @@ jobs:
             "${API_BASE}/contents/${DEST_PATH}?ref=${BRANCH}" \
             | jq -r '.sha // empty')
 
-          COMMIT_MSG="chore: sync wind_power_prediction v4 DAG (from ${{ github.repository }}@${{ github.sha }})"
+          COMMIT_MSG="chore: sync wind_power_prediction DAG (from ${{ github.repository }}@${{ github.sha }})"
 
           if [ -z "${FILE_SHA}" ]; then
             echo "신규 파일 생성..."
@@ -125,6 +125,6 @@ jobs:
             exit 1
           fi
           echo "✅ DAG 동기화 완료"
-          echo "   SOURCE : wind_power_prediction_v4.py"
+          echo "   SOURCE : wind_power_prediction.py"
           echo "   DEST   : ${DEST_PATH}"
           echo "   HTTP   : ${HTTP_CODE}"

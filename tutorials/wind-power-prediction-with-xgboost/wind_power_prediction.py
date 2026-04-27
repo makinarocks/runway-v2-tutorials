@@ -1,5 +1,5 @@
 """
-wind_power_prediction_v4.py — KubernetesPodOperator 기반 DAG
+wind_power_prediction.py — KubernetesPodOperator 기반 DAG
 
 이 파일이 무엇인가?
   Airflow DAG 정의 파일이다. Gitea push → .gitea/workflows/sync-dag.yml 이 이
@@ -7,10 +7,9 @@ wind_power_prediction_v4.py — KubernetesPodOperator 기반 DAG
   즉, 이 파일 자체는 Airflow 스케줄러 Pod 안에서 실행되고, ML 학습 로직이
   들어있는 게 아니라 "어떤 Pod를 어떤 순서로 띄울지"만 정의한다.
 
-v1(PythonOperator) 대비 핵심 변경:
-  - PythonOperator(scheduler 프로세스에서 직접 실행) → KubernetesPodOperator(별도 Pod)
-    → 태스크마다 CPU/메모리 격리, 필요한 파이썬 패키지도 독립 이미지에서 관리
-  - 태스크 간 데이터 전달: Airflow XCom / 공유 PVC → S3(MinIO)
+설계 핵심:
+  - KubernetesPodOperator: 태스크마다 별도 Pod → CPU/메모리 격리, 독립 패키지 환경
+  - 태스크 간 데이터 전달: Airflow XCom / 공유 PVC 가 아니라 S3(MinIO) 사용
     → DAG_RUN_ID 별로 prefix 를 격리하여 같은 DAG 의 여러 동시 실행이 충돌하지 않음
     → '{{ run_id }}' 는 Airflow 런타임 템플릿. 실제 run_id 값으로 치환되어 Pod 에 주입됨
 
@@ -37,7 +36,7 @@ v1(PythonOperator) 대비 핵심 변경:
      { aws_access_key_id, aws_secret_access_key,
        gitea_username, gitea_password,
        runway_api_key }
-  3. 아래 [사용자 설정] 섹션의 **2줄만** 본인 값으로 수정
+  3. 아래 [사용자 설정] 섹션의 **3줄만** 본인 값으로 수정
 
 ⚠️ 보안 주의:
   이 파일에는 OPENBAO_TOKEN 이 평문 하드코딩되어 있다 (튜토리얼 편의용).
@@ -314,7 +313,7 @@ default_args = {
 }
 
 with DAG(
-    dag_id="wind_power_prediction_v4",
+    dag_id="wind_power_prediction",
     default_args=default_args,
     description="Wind power prediction with XGBoost + MLflow tracking (KubernetesPodOperator)",
     schedule=None,

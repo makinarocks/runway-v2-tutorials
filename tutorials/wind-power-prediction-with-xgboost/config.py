@@ -7,7 +7,7 @@ config.py — 튜토리얼 전역 설정 모듈
   값들을 계산해주는 모듈. task_runner.py / download_model.py / test_inference.py
   가 공유.
 
-  **DAG(wind_power_prediction_v4.py) 는 이 파일을 import 하지 않는다.** DAG 는
+  **DAG(wind_power_prediction.py) 는 이 파일을 import 하지 않는다.** DAG 는
   airflow-dags 저장소로 sync 되어 스케줄러 Pod 에서 실행되므로 config.py 가
   거기 없다. 대신 DAG 상단에 `RUNWAY_PROJECT_ID` 와 `OPENBAO_TOKEN` 두 줄만
   하드코딩하고 파생값은 DAG 안에서 f-string 으로 직접 계산한다.
@@ -123,7 +123,7 @@ MODEL_REGISTRY_PATH = os.getenv("MODEL_REGISTRY_PATH", "/mnt/models")
 # =============================================================================
 # [추론] test_inference.py 전용
 # =============================================================================
-# INFERENCE_ENDPOINT : 9단계(모델 배포) 완료 후 엔드포인트 상세 페이지에서 복사한 추론 URL.
+# INFERENCE_ENDPOINT : README Step 10 (모델 배포) 완료 후 엔드포인트 상세 페이지에서 복사한 추론 URL.
 #                      형식: https://inference.<runway-base-domain>/api/<project>/<endpoint>/<deployment>
 #                      (이 URL 에 이미 프로젝트/엔드포인트/배포 경로가 모두 포함됨)
 # DEPLOYMENT_ID      : KServe V2 경로의 models/<name>/infer 에서 <name> 에 들어가는 값.
@@ -194,13 +194,13 @@ def load_secrets() -> dict:
             "  2) 우측 상단 프로필 → Copy token 으로 새 토큰 복사\n"
             "  3) 아래 두 곳 모두 갱신 필요:\n"
             "     - .env 파일의 OPENBAO_TOKEN\n"
-            "     - wind_power_prediction_v4.py 상단 OPENBAO_TOKEN (DAG 실행용)\n"
+            "     - wind_power_prediction.py 상단 OPENBAO_TOKEN (DAG 실행용)\n"
             "  4) git push 후 Sync DAG 워크플로우 완료 확인 → Airflow 재파싱"
         ) from e
     except hvac.exceptions.InvalidPath as e:
         raise RuntimeError(
             f"OpenBao KV 경로 없음: {OPENBAO_KV_MOUNT}/{OPENBAO_SECRET_PATH}. "
-            "README 4단계 / WALKTHROUGH 5-4 참조하여 시크릿을 등록했는지 확인."
+            "README Step 6 참조하여 시크릿을 등록했는지 확인."
         ) from e
     data = resp["data"]["data"]
     # ℹ️ 값은 로그에 남기지 않고 키 이름만 노출 (디버깅용)
