@@ -123,7 +123,7 @@ MODEL_REGISTRY_PATH = os.getenv("MODEL_REGISTRY_PATH", "/mnt/models")
 # =============================================================================
 # [추론] test_inference.py 전용
 # =============================================================================
-# INFERENCE_ENDPOINT : 9단계(모델 배포) 완료 후 엔드포인트 상세 페이지에서 복사한 추론 URL.
+# INFERENCE_ENDPOINT : README Step 10 (모델 배포) 완료 후 엔드포인트 상세 페이지에서 복사한 추론 URL.
 #                      형식: https://inference.<runway-base-domain>/api/<project>/<endpoint>/<deployment>
 #                      (이 URL 에 이미 프로젝트/엔드포인트/배포 경로가 모두 포함됨)
 # DEPLOYMENT_ID      : KServe V2 경로의 models/<name>/infer 에서 <name> 에 들어가는 값.
