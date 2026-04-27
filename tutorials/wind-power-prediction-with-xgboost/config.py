@@ -7,7 +7,7 @@ config.py — 튜토리얼 전역 설정 모듈
   값들을 계산해주는 모듈. task_runner.py / download_model.py / test_inference.py
   가 공유.
 
-  **DAG(wind_power_prediction_v4.py) 는 이 파일을 import 하지 않는다.** DAG 는
+  **DAG(wind_power_prediction.py) 는 이 파일을 import 하지 않는다.** DAG 는
   airflow-dags 저장소로 sync 되어 스케줄러 Pod 에서 실행되므로 config.py 가
   거기 없다. 대신 DAG 상단에 `RUNWAY_PROJECT_ID` 와 `OPENBAO_TOKEN` 두 줄만
   하드코딩하고 파생값은 DAG 안에서 f-string 으로 직접 계산한다.
@@ -194,7 +194,7 @@ def load_secrets() -> dict:
             "  2) 우측 상단 프로필 → Copy token 으로 새 토큰 복사\n"
             "  3) 아래 두 곳 모두 갱신 필요:\n"
             "     - .env 파일의 OPENBAO_TOKEN\n"
-            "     - wind_power_prediction_v4.py 상단 OPENBAO_TOKEN (DAG 실행용)\n"
+            "     - wind_power_prediction.py 상단 OPENBAO_TOKEN (DAG 실행용)\n"
             "  4) git push 후 Sync DAG 워크플로우 완료 확인 → Airflow 재파싱"
         ) from e
     except hvac.exceptions.InvalidPath as e:

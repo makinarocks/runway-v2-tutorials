@@ -3,7 +3,7 @@ task_runner.py — KubernetesPodOperator 용 태스크 실행기
 
 이 파일이 무엇인가?
   Docker 이미지(wind-power-prediction:latest)에 번들되는 파이썬 스크립트.
-  Airflow DAG(wind_power_prediction_v4.py)는 단계별로 별도 K8s Pod를 띄워 각
+  Airflow DAG(wind_power_prediction.py)는 단계별로 별도 K8s Pod를 띄워 각
   Pod 안에서 `python task_runner.py --step <단계>` 를 실행한다.
   즉 **실제 ML 로직(데이터 로드, 학습, 평가, 로깅)이 여기에 들어있다**.
 

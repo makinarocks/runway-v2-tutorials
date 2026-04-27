@@ -41,7 +41,7 @@ wind-power-prediction-with-xgboost/
 ├── README.md                      # 본 가이드
 ├── Dockerfile                     # task_runner.py 용 이미지
 ├── requirements.txt               # Python 의존성
-├── wind_power_prediction_v4.py    # KubernetesPodOperator 기반 DAG
+├── wind_power_prediction.py    # KubernetesPodOperator 기반 DAG
 ├── task_runner.py                 # Docker 이미지 내 태스크 실행 로직
 ├── config.py                      # 전역 설정/파생값 중앙 모듈 (task_runner/IDE 공용)
 ├── .env.example                   # 사용자 편집용 환경 템플릿 → cp 하여 .env 생성
@@ -191,8 +191,8 @@ python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
 > **토큰 만료 시 대응** (세션 종료 또는 재로그인 시 이전 토큰 무효화됨):
 > 1. OpenBao 콘솔 → 프로필 → Copy token 으로 새 토큰 복사
 > 2. `~/workspace/wind-power-prediction/.env` 의 `OPENBAO_TOKEN` 갱신
-> 3. `wind_power_prediction_v4.py` 상단의 `OPENBAO_TOKEN` 도 같이 갱신 (DAG 스케줄러용)
-> 4. `git add wind_power_prediction_v4.py && git commit -m "fix: refresh openbao token" && git push`
+> 3. `wind_power_prediction.py` 상단의 `OPENBAO_TOKEN` 도 같이 갱신 (DAG 스케줄러용)
+> 4. `git add wind_power_prediction.py && git commit -m "fix: refresh openbao token" && git push`
 > 5. Sync DAG 워크플로우 완료 후 Airflow UI 에서 DAG 재실행
 >
 > 토큰이 살아있는지 빠르게 확인:
@@ -295,7 +295,7 @@ git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
 # 튜토리얼 소스를 본인 저장소로 복사 (.git 제외)
 cd reference/tutorials/wind-power-prediction-with-xgboost
 cp -r Dockerfile requirements.txt task_runner.py config.py .env.example \
-      wind_power_prediction_v4.py download_model.py test_inference.py \
+      wind_power_prediction.py download_model.py test_inference.py \
       run_dag.sh dataset ~/workspace/wind-power-prediction/
 cp -r .gitea ~/workspace/wind-power-prediction/
 
@@ -333,7 +333,7 @@ DEPLOYMENT_ID=default
 
 > `.env` 는 `.gitignore` 에 포함되어 있어 Gitea 로 커밋되지 않습니다. IDE 스크립트 (`download_model.py`, `test_inference.py`) 가 `config.py` 를 통해 자동 로드합니다.
 
-#### ② DAG 파일 상수 (`wind_power_prediction_v4.py`)
+#### ② DAG 파일 상수 (`wind_power_prediction.py`)
 
 파일 상단 [사용자 설정] 섹션의 **3줄만** 수정:
 
@@ -395,13 +395,13 @@ git push origin main
 Gitea 저장소 **Actions** 탭 진입. 두 워크플로우가 실행됩니다:
 
 - **Build and Push to Gitea CR** — Docker 이미지 빌드 & CR 푸시 (`task_runner.py`, `config.py`, `Dockerfile`, `requirements.txt`, `dataset/**` 변경 시)
-- **Sync DAG to airflow-dags** — DAG 파일을 `<your-project-id>/airflow-dags` 저장소의 `wind_power_prediction/v4/wind_power_prediction.py` 로 복사 (`wind_power_prediction_v4.py` 변경 시)
+- **Sync DAG to airflow-dags** — DAG 파일을 `<your-project-id>/airflow-dags` 저장소의 `wind_power_prediction/wind_power_prediction.py` 로 복사 (`wind_power_prediction.py` 변경 시)
 
 두 개 모두 녹색 체크로 끝날 때까지 대기 (이미지 빌드는 5-10분).
 
 ### 7-2. DAG 인식 확인
 
-Airflow UI (`https://airflow.<your-runway-domain>`) → DAG 목록에 `wind_power_prediction_v4` 가 있어야 합니다. 없으면 **Sync DAG 워크플로우** 로그 확인.
+Airflow UI (`https://airflow.<your-runway-domain>`) → DAG 목록에 `wind_power_prediction` 가 있어야 합니다. 없으면 **Sync DAG 워크플로우** 로그 확인.
 
 ### 이후 업데이트 시
 
@@ -410,7 +410,7 @@ Airflow UI (`https://airflow.<your-runway-domain>`) → DAG 목록에 `wind_powe
 | 변경 파일 | 자동 동작 | 반영 경로 |
 |---|---|---|
 | `task_runner.py`, `config.py`, `Dockerfile`, `requirements.txt`, `dataset/**` | 이미지 재빌드 (`build-image.yml`) | Gitea CR `:latest` 태그 갱신 → 다음 DAG 실행 시 새 이미지 pull (`image_pull_policy="Always"`) |
-| `wind_power_prediction_v4.py` | DAG 파일 동기화 (`sync-dag.yml`) | `airflow-dags/wind_power_prediction/v4/wind_power_prediction.py` 업데이트 → Airflow 가 git-sync 후 재파싱 |
+| `wind_power_prediction.py` | DAG 파일 동기화 (`sync-dag.yml`) | `airflow-dags/wind_power_prediction/wind_power_prediction.py` 업데이트 → Airflow 가 git-sync 후 재파싱 |
 
 > `task_runner.py` 와 DAG 파일을 **동시에** 수정한 경우엔 두 워크플로우가 **동시에 트리거** 됩니다. Gitea Actions 러너 수가 제한된 환경에서는 순차 실행될 수 있습니다.
 
@@ -420,7 +420,7 @@ Airflow UI (`https://airflow.<your-runway-domain>`) → DAG 목록에 `wind_powe
 
 ### 옵션 A — Airflow UI (권장)
 
-1. `wind_power_prediction_v4` DAG 클릭 → 우측 ▶ **Trigger DAG**
+1. `wind_power_prediction` DAG 클릭 → 우측 ▶ **Trigger DAG**
 2. 그래프 뷰에서 태스크가 순서대로 초록색으로 바뀌는지 확인:
    ```
    ensure_pull_secret → [load_data, load_model] → train_model → evaluate_model → log_to_mlflow
@@ -860,5 +860,4 @@ s3://{S3_BUCKET}/wind-power/dag-runs/{DAG_RUN_ID}/
 
 ## 참고
 
-- 현재 DAG 는 KubernetesPodOperator + S3 아티팩트 공유 + OpenBao + ensure_pull_secret 구조입니다 (`wind_power_prediction_v4.py`).
-- 파일명에 `_v4` 접미사가 붙은 이유: 내부 이터레이션을 거치면서 v1 (PythonOperator + XCom/PVC) → v4 로 단계적 발전했고, dag_id 고정성을 위해 버전 접미사를 유지합니다.
+- 현재 DAG 는 KubernetesPodOperator + S3 아티팩트 공유 + OpenBao + ensure_pull_secret 구조입니다 (`wind_power_prediction.py`).
