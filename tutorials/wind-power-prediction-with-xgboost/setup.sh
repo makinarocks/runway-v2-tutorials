@@ -12,12 +12,18 @@
 #
 # 결과:
 #   - ./venv/ 생성 (또는 기존 venv 재사용)
-#   - 활성화 + pip 업그레이드 + requirements.txt 의존성 설치
-#
-# 매 새 터미널마다:
-#   cd ~/workspace/wind-power-prediction && source venv/bin/activate
+#   - pip 업그레이드 + requirements.txt 의존성 설치
+#   ⚠️ 스크립트 안에서만 venv 가 활성화되고, 종료 후 호출한 셸에는 활성화가
+#      유지되지 않습니다. 스크립트 종료 후 반드시 직접 활성화:
+#        cd ~/workspace/wind-power-prediction && source venv/bin/activate
 
-set -e
+# `source setup.sh` 로 실행하면 set -e 가 호출자 셸을 죽일 수 있음 → 방지
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  echo "[setup] 이 스크립트는 source 가 아니라 'bash setup.sh' 로 실행하세요." >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+set -euo pipefail
 
 # 스크립트 위치 = 프로젝트 루트 (어디서 실행해도 동일하게 동작)
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,5 +62,7 @@ echo "[setup] 설치된 패키지:"
 pip list
 
 echo ""
-echo "[setup] 완료. 이후 새 터미널을 열 때마다 venv 활성화 필요:"
-echo "    cd ~/workspace/wind-power-prediction && source venv/bin/activate"
+echo "[setup] 완료."
+echo "[setup] ⚠️  이 스크립트는 자식 셸에서 돌았기 때문에 호출한 터미널에는 venv 가 활성화되어 있지 않습니다."
+echo "[setup]    같은 터미널에서 python 명령을 쓰기 전에 직접 활성화하세요:"
+echo "[setup]      cd ~/workspace/wind-power-prediction && source venv/bin/activate"

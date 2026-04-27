@@ -177,6 +177,8 @@ sudo apt install -y python3 python3-pip python3-venv
 
 > 위 패키지들은 IDE Pod 가 살아있는 동안 한 번만 설치하면 됩니다. venv 생성과 프로젝트 의존성(`requirements.txt`) 설치는 **Step 5-3 (소스 코드 복사 후 `setup.sh` 실행)** 에서 처리합니다.
 
+> `sudo` 가 없는 컨테이너라면 root 로 진입해 apt 를 실행해야 합니다 (예: 클러스터 외부에서 `kubectl exec -it <pod> -- bash` 또는 플랫폼 담당자에게 root 셸 요청). 일반적인 Code Server 이미지에는 sudo 가 활성화돼 있어 그대로 동작합니다.
+
 ### 3-2. OpenBao 서비스 토큰 확보 (AWS 키 + runway_api_key 조회용)
 
 이 토큰이 **튜토리얼 전체에서 하드코딩되는 유일한 시크릿** 입니다. 이 토큰으로 OpenBao 에 접근해 나머지 시크릿(AWS 키, runway_api_key 등) 을 조회하므로, 다른 시크릿을 코드에 넣지 않아도 됩니다.
@@ -312,9 +314,9 @@ cd ~/workspace/wind-power-prediction
 bash setup.sh
 ```
 
-스크립트가 끝나면 venv 가 활성화된 상태로 떠있고 `boto3`, `hvac`, `pandas`, `requests`, `python-dotenv` 등 IDE 스크립트가 필요로 하는 모든 패키지가 설치됩니다.
+스크립트가 끝나면 `./venv/` 안에 `boto3`, `hvac`, `pandas`, `requests`, `python-dotenv` 등 IDE 스크립트가 필요로 하는 모든 패키지가 설치돼 있습니다.
 
-> **새 터미널을 열 때마다 venv 재활성화 필요**:
+> ⚠️ **반드시 직접 활성화 필요** — `bash setup.sh` 는 자식 셸에서 돌기 때문에 스크립트가 끝나도 **현재 터미널에는 venv 가 활성화되어 있지 않습니다**. 같은 터미널에서도, 새 터미널에서도 매번 직접 활성화:
 > ```bash
 > cd ~/workspace/wind-power-prediction && source venv/bin/activate
 > ```
