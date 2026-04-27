@@ -14,10 +14,14 @@ venv/
 .idea/
 .vscode/
 
-# Claude Code 개인 설정 (권한 허용 규칙 등, 사용자마다 다름)
+# Claude Code — 사용자별 메타데이터 (권한 규칙, 메모, 캐시 등)
+# 공개 저장소에 들어가면 안 되는 사용자별/세션별 컨텍스트
 .claude/settings.local.json
-
-# Claude Code 프로젝트 메모 (사용자별 작업 컨텍스트)
+.claude/projects/
+.claude/cache/
+.claude/todos/
+.claude/shell-snapshots/
+# 프로젝트 루트 및 모든 하위 디렉토리의 CLAUDE.md (Claude Code 프로젝트 메모, 사용자별 작업 컨텍스트)
 CLAUDE.md
 
 # MLflow / models / data artifacts
