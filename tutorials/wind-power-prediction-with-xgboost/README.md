@@ -48,6 +48,7 @@ wind-power-prediction-with-xgboost/
 ├── download_model.py              # S3 → PVC 모델 아티팩트 복사 (IDE 실행용)
 ├── test_inference.py              # 배포된 모델 추론 엔드포인트 호출 테스트 (IDE 실행용)
 ├── run_dag.sh                     # Airflow REST API 로 DAG trigger
+├── setup.sh                       # IDE 에서 venv 생성 + 의존성 설치 (1회용 헬퍼)
 ├── .gitea/workflows/
 │   ├── build-image.yml            # task_runner 변경 시 이미지 자동 빌드
 │   └── sync-dag.yml               # DAG 파일 변경 시 airflow-dags 저장소로 sync
@@ -165,20 +166,16 @@ Code Server 터미널을 엽니다 (`Terminal > New Terminal` 또는 ``Ctrl+` ``
 
 > git 사용자 정보 / 작업 디렉토리 이동은 Step 5 (저장소 clone 직전) 에서 함께 처리합니다. 이번 단계에선 이후에 계속 쓸 **파이썬 패키지 설치와 토큰 확보** 만 합니다.
 
-### 3-1. 파이썬 패키지 설치
+### 3-1. 시스템 Python 설치 (apt)
 
-IDE 안에서 `download_model.py` / `test_inference.py` 를 돌리려면:
+Code Server 의 기본 이미지에는 Python 도 pip 도 설치돼 있지 않으므로 먼저 OS 패키지를 설치합니다.
 
 ```bash
-pip install boto3 hvac
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv
 ```
 
-권한 오류가 나면:
-```bash
-pip install --user boto3 hvac && export PATH="$HOME/.local/bin:$PATH"
-# 또는 venv
-python -m venv .venv && source .venv/bin/activate && pip install boto3 hvac
-```
+> 위 패키지들은 IDE Pod 가 살아있는 동안 한 번만 설치하면 됩니다. venv 생성과 프로젝트 의존성(`requirements.txt`) 설치는 **Step 5-3 (소스 코드 복사 후 `setup.sh` 실행)** 에서 처리합니다.
 
 ### 3-2. OpenBao 서비스 토큰 확보 (AWS 키 + runway_api_key 조회용)
 
@@ -296,7 +293,7 @@ git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
 cd reference/tutorials/wind-power-prediction-with-xgboost
 cp -r Dockerfile requirements.txt task_runner.py config.py .env.example \
       wind_power_prediction.py download_model.py test_inference.py \
-      run_dag.sh dataset ~/workspace/wind-power-prediction/
+      run_dag.sh setup.sh dataset ~/workspace/wind-power-prediction/
 cp -r .gitea ~/workspace/wind-power-prediction/
 
 # (선택) 문서도 함께
@@ -306,7 +303,26 @@ cp README.md ~/workspace/wind-power-prediction/
 cd ~/workspace && rm -rf reference
 ```
 
-### 5-3. 본인 환경 값 설정 — **세 줄만** 수정
+### 5-3. venv 생성 + 의존성 설치 (`setup.sh`)
+
+저장소 루트에 포함된 `setup.sh` 가 venv 생성, pip 업그레이드, `requirements.txt` 설치까지 한 번에 처리합니다.
+
+```bash
+cd ~/workspace/wind-power-prediction
+bash setup.sh
+```
+
+스크립트가 끝나면 venv 가 활성화된 상태로 떠있고 `boto3`, `hvac`, `pandas`, `requests`, `python-dotenv` 등 IDE 스크립트가 필요로 하는 모든 패키지가 설치됩니다.
+
+> **새 터미널을 열 때마다 venv 재활성화 필요**:
+> ```bash
+> cd ~/workspace/wind-power-prediction && source venv/bin/activate
+> ```
+> 이걸 잊고 `python download_model.py` 를 실행하면 `ModuleNotFoundError` 가 납니다.
+
+> `setup.sh` 가 사용하는 시스템 도구는 Step 3-1 의 `python3` / `pip` / `venv` 패키지뿐. apt 단계가 안 끝나있으면 첫 줄에서 실패합니다.
+
+### 5-4. 본인 환경 값 설정 — **세 줄만** 수정
 
 설정이 `config.py` + `.env` + DAG 상단 3줄로 중앙화돼 있어서, 사용자가 손댈 값은 **`RUNWAY_PROJECT_ID` + `RUNWAY_BASE_DOMAIN` + `OPENBAO_TOKEN` 3개** 입니다. 나머지 값(`NAMESPACE`, `IMAGE`, 모든 서비스 URL, `EXPERIMENT_NAME`, `MODEL_NAME`, `S3_ARTIFACT_PREFIX` 등)은 이 3개에서 자동 파생됩니다.
 
@@ -461,6 +477,7 @@ IDE 터미널에서:
 
 ```bash
 cd ~/workspace/wind-power-prediction
+source venv/bin/activate                 # Step 5-3 setup.sh 가 만든 venv
 
 # OpenBao 토큰이 .env 에 있는지 확인 (Runway API 토큰은 OpenBao 에 저장됨)
 grep OPENBAO_TOKEN .env | head -c 30   # 앞부분이 보이면 OK
@@ -590,6 +607,7 @@ IDE 터미널에서:
 ```bash
 # 저장소 루트에서 실행
 cd ~/workspace/wind-power-prediction
+source venv/bin/activate                 # Step 5-3 setup.sh 가 만든 venv
 
 # .env 파일에 INFERENCE_ENDPOINT 추가 (한 번만)
 #   INFERENCE_ENDPOINT=<11-1 UI 요청 URL 에서 /v2/models/... 이전까지>
