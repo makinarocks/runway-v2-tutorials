@@ -17,6 +17,9 @@ venv/
 # Claude Code 개인 설정 (권한 허용 규칙 등, 사용자마다 다름)
 .claude/settings.local.json
 
+# Claude Code 프로젝트 메모 (사용자별 작업 컨텍스트)
+CLAUDE.md
+
 # MLflow / models / data artifacts
 mlruns/
 mlartifacts/
