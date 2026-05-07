@@ -36,6 +36,9 @@ if [ ! -f requirements.txt ]; then
   exit 1
 fi
 
+# venv가 git에 tracking된 경우 제거
+git rm -r --cached venv/ 2>/dev/null || true
+
 # 1) venv 생성/재사용
 if [ ! -d venv ]; then
   echo "[setup] venv 생성..."
