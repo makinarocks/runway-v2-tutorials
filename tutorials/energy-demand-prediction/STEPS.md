@@ -51,6 +51,19 @@
 ### values.yaml 수정
 
 ```yaml
+env:
+  SUDO_PASSWORD: "mypassword"
+  PUID: "1000"
+  PGID: "1000"
+
+resources:
+  requests:
+    cpu: 1000m
+    memory: 8Gi
+  limits:
+    cpu: 4000m
+    memory: 8Gi
+
 persistence:
   enabled: true
   mountPath: /mnt/data
@@ -201,13 +214,15 @@ Gitea Actions 탭에서 3개 워크플로우 확인:
 
 Code Server 터미널에서:
 
-```bash
-mkdir -p /mnt/data/dataset
+데이터셋 파일을 Code Server 에 업로드 (드래그앤드롭) 한 뒤 PVC 경로로 이동:
 
-# 아래 디렉토리를 /mnt/data/dataset/ 에 업로드 (드래그앤드롭 또는 git)
-# pred-demo-dataset/   — 학습 데이터 (Q1.csv, Q2.csv, Q3.csv)
-# pred-demo-testset/   — 평가 데이터 (Q1.csv, Q2.csv, Q3.csv, Q4.csv)
+```bash
+sudo mkdir -p /mnt/data/dataset
+sudo mv pred-demo-dataset/ /mnt/data/dataset/
+sudo mv pred-demo-testset/ /mnt/data/dataset/
 ```
+
+> 권한 문제 시 `sudo` 필요. 드래그앤드롭 시 `~/workspace/` 에 업로드되므로 거기서 `mv`.
 
 확인:
 ```bash
