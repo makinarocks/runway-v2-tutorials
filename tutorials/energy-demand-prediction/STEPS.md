@@ -1,87 +1,199 @@
 # Energy Demand Prediction — Runway 2.0 배포 절차
 
-## 완료된 단계
+새 Runway 프로젝트에서 처음부터 에너지 수요 예측 데모를 배포하는 전체 절차.
 
-- [x] Gitea 레포 생성 (`<your-project-id>/energy-demand-prediction`)
-- [x] 소스 코드 push (7개 커밋)
+> **표기 규약**: `<your-project-id>`, `<your-runway-domain>` 등은 본인 환경에 맞게 교체.
 
 ---
 
-## Step 1. Gitea Actions Secrets 등록
+## Step 0. 사전 준비 — 토큰 발급
 
-레포 **Settings > Secrets and Variables > Actions**에 4개 등록:
+시작 전 **3가지 토큰**을 미리 확보합니다:
 
-| Secret | 값 | 비고 |
-|--------|-----|------|
-| `GIT_USERNAME` | Gitea 로그인명 | 예: `<your-gitea-username>` |
-| `GIT_TOKEN` | 개인 액세스 토큰 | Repository + Package write 권한. Gitea > Settings > Applications 에서 발급 |
-| `IMAGE_TAG` | `gitea.<your-runway-domain>/<your-project-id>/energy-demand-prediction:latest` | ML 이미지 |
-| `GUI_IMAGE_TAG` | `gitea.<your-runway-domain>/<your-project-id>/energy-demand-gui:latest` | GUI 이미지 |
+| 토큰 | 발급 위치 | 용도 |
+|------|----------|------|
+| **Gitea 개인 액세스 토큰** | Gitea > 우측 상단 아바타 > Settings > Applications > Generate Token (Repository + Package write 체크) | 코드 push, CI/CD, Helm chart 업로드 |
+| **OpenBao 서비스 토큰** | `https://openbao.<your-runway-domain>` 프로젝트 네임스페이스 로그인 → 프로필 → Copy token | AWS 키/Gitea 자격증명 런타임 조회 |
+| **Runway API 토큰** | Runway 콘솔 > 계정 설정 > 액세스 키 > API 키 | MLflow 인증 + 추론 Bearer 토큰 |
 
-## Step 2. CI/CD 워크플로우 실행 확인
+> S3 자격증명 (aws_access_key_id / aws_secret_access_key): Runway 콘솔 > Keys 메뉴에서 발급.
 
-Secrets 등록 후, 워크플로우를 트리거하려면 코드를 한 번 더 push 하거나 Gitea Actions 탭에서 Re-run:
+---
+
+## Step 1. Gitea 레포 생성 + 코드 push
+
+### 1-1. GitHub 에서 튜토리얼 코드 가져오기
 
 ```bash
-# 빈 커밋으로 워크플로우 트리거 (필요 시)
-git commit --allow-empty -m "chore: trigger CI/CD"
+git clone git@github.com:makinarocks/runway-v2-tutorials.git
+```
+
+### 1-2. Gitea 에 빈 레포 생성
+
+1. `https://gitea.<your-runway-domain>` 접속
+2. 우측 상단 **+ → 새 저장소 만들기**
+3. **소유자**: `<your-project-id>` 조직
+4. **이름**: `energy-demand-prediction`
+5. **가시성**: Private
+6. **저장소 초기화**: 체크 (README.md 자동 생성)
+7. **저장소 만들기**
+
+### 1-3. 코드 복사 + push
+
+```bash
+# Gitea 레포 clone
+cd ~/workspace
+git clone https://gitea.<your-runway-domain>/<your-project-id>/energy-demand-prediction.git
+cd energy-demand-prediction
+
+# 튜토리얼 코드 복사
+cp -r ~/runway-v2-tutorials/tutorials/energy-demand-prediction/* .
+cp -r ~/runway-v2-tutorials/tutorials/energy-demand-prediction/.gitea .
+cp ~/runway-v2-tutorials/tutorials/energy-demand-prediction/.gitignore .
+cp ~/runway-v2-tutorials/tutorials/energy-demand-prediction/.env.example .
+
+# 자격증명 캐시 (최초 1회)
+git config --global credential.helper store
+```
+
+---
+
+## Step 2. 플레이스홀더 값 수정
+
+**6개 파일**에서 `<your-...>` 값을 본인 환경으로 교체:
+
+### ① `energy_demand_prediction.py` (DAG) — 4곳
+
+```python
+RUNWAY_PROJECT_ID  = "<your-project-id>"        # 본인 프로젝트 ID
+RUNWAY_BASE_DOMAIN = "<your-runway-domain>"      # 예: try.mrxrunway.ai
+OPENBAO_TOKEN      = "<your-openbao-token>"      # Step 0 에서 발급한 OpenBao 토큰
+PVC_NAME           = "<your-pvc-name>"           # Step 5 에서 생성할 PVC 볼륨 ID
+```
+
+### ② `gui/nginx.conf` — 2곳
+
+```nginx
+proxy_pass https://inference.<your-runway-domain>/api/;
+proxy_set_header Host inference.<your-runway-domain>;
+...
+proxy_pass https://airflow.<your-runway-domain>/;
+proxy_set_header Host airflow.<your-runway-domain>;
+```
+
+### ③ `gui/vite.config.js` — 2곳 (로컬 개발용)
+
+```javascript
+target: 'https://inference.<your-runway-domain>',
+...
+target: 'https://airflow.<your-runway-domain>',
+```
+
+### ④ `helm/gui/values.yaml` — 2곳
+
+```yaml
+image:
+  repository: gitea.<your-runway-domain>/<your-project-id>/energy-demand-gui
+httpRoute:
+  hostname: "<your-gui-hostname>.<your-runway-domain>"
+```
+
+---
+
+## Step 3. 첫 push
+
+```bash
+git add .
+git commit -m "feat: initial energy-demand-prediction setup"
 git push origin main
 ```
 
-Actions 탭에서 3개 워크플로우 확인:
-- **Build ML Image** — ✅ 녹색 확인 (5~10분)
-- **Build GUI Image** — ✅ 녹색 확인
-- **Sync DAG** — ✅ 녹색 확인
+---
 
-## Step 3. PVC 생성
+## Step 4. Gitea Actions Secrets 등록
+
+레포 **Settings > Secrets and Variables > Actions** 에 4개 등록:
+
+| Secret | 값 |
+|--------|-----|
+| `GIT_USERNAME` | Gitea 로그인명 |
+| `GIT_TOKEN` | Step 0 의 Gitea 개인 액세스 토큰 |
+| `IMAGE_TAG` | `gitea.<your-runway-domain>/<your-project-id>/energy-demand-prediction:latest` |
+| `GUI_IMAGE_TAG` | `gitea.<your-runway-domain>/<your-project-id>/energy-demand-gui:latest` |
+
+---
+
+## Step 5. PVC 생성
 
 **Runway 콘솔 > 프로젝트 > 스토리지 > + 생성**:
 
 | 필드 | 값 |
 |------|-----|
-| 볼륨 ID | `energy-demand-data` |
+| 볼륨 ID | `<your-pvc-name>` (Step 2 의 PVC_NAME 과 일치) |
 | 스토리지 클래스 | `ceph-filesystem` |
-| 접근 모드 | `ReadWriteMany` |
+| 접근 모드 | **ReadWriteMany** (필수! RWO 는 Multi-Attach 에러 발생) |
 | 크기 | `5` GiB |
 
 생성 후 목록에서 `Bound` 상태 확인.
 
-## Step 4. Code Server 에서 PVC 에 데이터셋 업로드
+---
 
-### 4-1. Code Server 가 PVC 를 마운트하도록 설정
+## Step 6. CI/CD 워크플로우 트리거 + 확인
 
-기존 Code Server 의 values.yaml 에서 `persistence.existingClaim` 을 `energy-demand-data` 로 변경하거나,
-새 Code Server 를 배포하여 해당 PVC 를 마운트.
+Secrets 등록 후 워크플로우를 트리거합니다:
+
+```bash
+git commit --allow-empty -m "chore: trigger CI/CD"
+git push origin main
+```
+
+Gitea Actions 탭에서 3개 워크플로우 확인:
+- **Build ML Image** — ✅ 녹색 확인 (5~10분)
+- **Build GUI Image** — ✅ 녹색 확인
+- **Sync DAG** — ✅ 녹색 확인
+
+---
+
+## Step 7. Code Server 배포 + PVC 마운트
+
+**Runway 콘솔 > 카탈로그 > Code Server** 배포.
+
+values.yaml 에서 PVC 연결:
 
 ```yaml
 persistence:
   enabled: true
   mountPath: /mnt/data
-  existingClaim: energy-demand-data
+  existingClaim: <your-pvc-name>
 ```
 
-### 4-2. 데이터셋 파일 복사
+httpRoute hostname 도 설정하여 외부 접속 가능하게.
+
+---
+
+## Step 8. 데이터셋 업로드
 
 Code Server 터미널에서:
 
 ```bash
 mkdir -p /mnt/data/dataset
 
-# 로컬에서 데이터셋을 Code Server 로 업로드 (드래그앤드롭 또는 git)
-# 필요한 파일:
-#   Q1.csv        — 학습 데이터 (1298행)
-#   Q3.csv        — 학습 데이터 (1217행)
-#   Q1_eval.csv   — 평가 데이터 (1행)
-#   Q3_eval.csv   — 평가 데이터 (1행)
+# 아래 디렉토리를 /mnt/data/dataset/ 에 업로드 (드래그앤드롭 또는 git)
+# pred-demo-dataset/   — 학습 데이터 (Q1.csv, Q2.csv, Q3.csv)
+# pred-demo-testset/   — 평가 데이터 (Q1.csv, Q2.csv, Q3.csv, Q4.csv)
 ```
 
 확인:
 ```bash
-ls -la /mnt/data/dataset/
-# Q1.csv  Q3.csv  Q1_eval.csv  Q3_eval.csv 가 있어야 함
+ls /mnt/data/dataset/pred-demo-dataset/
+# Q1.csv  Q2.csv  Q3.csv
+ls /mnt/data/dataset/pred-demo-testset/
+# Q1.csv  Q2.csv  Q3.csv  Q4.csv
 ```
 
-## Step 5. OpenBao 시크릿 등록
+---
+
+## Step 9. OpenBao 시크릿 등록
 
 1. `https://openbao.<your-runway-domain>` 접속 → 프로젝트 네임스페이스 로그인
 2. **Secret Engines** > `secret/` > **Create secret**
@@ -93,31 +205,12 @@ ls -la /mnt/data/dataset/
 | `aws_access_key_id` | S3 Access Key | task_runner S3 접근 |
 | `aws_secret_access_key` | S3 Secret Key | task_runner S3 접근 |
 | `gitea_username` | Gitea 로그인명 | ensure_pull_secret 이미지 pull 인증 |
-| `gitea_password` | Gitea 액세스 토큰 | ensure_pull_secret 이미지 pull 인증 |
-| `runway_api_key` | Runway API 토큰 | MLflow 인증 + 추론 엔드포인트 Bearer |
+| `gitea_password` | Step 0 Gitea 액세스 토큰 | ensure_pull_secret 이미지 pull 인증 |
+| `runway_api_key` | Step 0 Runway API 토큰 | MLflow 인증 + 추론 Bearer |
 
-> S3 자격증명: Runway 콘솔 > Keys 메뉴에서 발급
-> Runway API 토큰: 콘솔 > 계정 설정 > 액세스 키 > API 키
+---
 
-## Step 6. DAG 파일에 본인 값 설정
-
-`energy_demand_prediction.py` 상단 3줄을 본인 값으로 수정:
-
-```python
-RUNWAY_PROJECT_ID  = "<your-project-id>"          # ← 본인 프로젝트 ID
-RUNWAY_BASE_DOMAIN = "<your-runway-domain>"       # ← 본인 베이스 도메인
-OPENBAO_TOKEN      = "s.<본인-OpenBao-토큰>"   # ← Step 5 에서 로그인 후 Copy token
-```
-
-```bash
-git add energy_demand_prediction.py
-git commit -m "fix: set user-specific DAG constants"
-git push origin main
-```
-
-> push 하면 sync-dag 워크플로우가 자동 실행되어 airflow-dags 레포에 반영됨.
-
-## Step 7. Airflow RoleBinding 확인
+## Step 10. Airflow RoleBinding 확인
 
 ```bash
 kubectl get rolebinding airflow-scheduler-pod-runner -n <your-project-id>
@@ -131,103 +224,70 @@ kubectl create rolebinding airflow-scheduler-pod-runner \
   -n <your-project-id>
 ```
 
-> wind-power-prediction 에서 이미 생성했다면 동일 프로젝트이므로 재생성 불필요.
+---
 
-## Step 8. (옵션 A) Code Server 에서 수동 실행
+## Step 11. 모델 학습
 
-Airflow DAG 를 사용하지 않고 Code Server 에서 직접 파이프라인을 실행할 수 있습니다.
-디버깅, 빠른 테스트, 또는 Airflow 에 문제가 있을 때 유용합니다.
-
-### 8-A-1. 시스템 Python 설치 + venv 초기화
+### 옵션 A: Code Server 에서 수동 실행 (권장 — 디버깅 용이)
 
 ```bash
 cd ~/workspace/energy-demand-prediction
-bash setup.sh
-```
-
-> `setup.sh` 가 python3 미설치 시 자동으로 `apt install` 합니다.
-
-### 8-A-2. venv 활성화 + .env 설정
-
-```bash
+bash setup.sh                    # Python 3.10 + venv (최초 1회)
 source venv/bin/activate
+cp .env.example .env             # 편집: RUNWAY_PROJECT_ID, RUNWAY_BASE_DOMAIN, OPENBAO_TOKEN
 
-# .env 파일 생성 (최초 1회)
-cp .env.example .env
-```
-
-`.env` 파일 편집:
-```dotenv
-RUNWAY_PROJECT_ID=<your-project-id>
-RUNWAY_BASE_DOMAIN=<your-runway-domain>
-OPENBAO_TOKEN=s.<OpenBao 콘솔에서 Copy token>
-```
-
-### 8-A-3. 파이프라인 순차 실행
-
-```bash
-# 1) 데이터 로드 — PVC 에서 CSV 읽어 S3 업로드
 python task_runner.py --step load_data
-
-# 2) 모델 학습 — S3 에서 데이터 받아 MultiOutputRegressor 학습 (수 분 소요)
-python task_runner.py --step train_model
-
-# 3) 모델 평가 — Q별 RMSE/MAE/MAPE 계산
+python task_runner.py --step train_model        # 수 분 소요
 python task_runner.py --step evaluate_model
-
-# 4) MLflow 등록 — pyfunc 모델 + 메트릭 로깅
 python task_runner.py --step log_to_mlflow
 ```
 
-### 8-A-4. 확인
+> `setup.sh` 는 Python 3.10 미설치 시 자동으로 `apt install` 합니다.
+> Python 3.10 을 사용하는 이유: MLServer 가 3.10 기반이라 pickle 호환성 필요.
 
-각 step 이 `[완료]` 메시지를 출력하면 성공.
-실패 시 에러 메시지를 확인하세요:
-- `OPENBAO_TOKEN 이 비어 있습니다` → `.env` 확인
-- `RUNWAY_BASE_DOMAIN 이 비어 있습니다` → `.env` 확인
-- `OpenBao 403 Forbidden` → 토큰 만료 → OpenBao 재로그인 후 `.env` 갱신
-- `FileNotFoundError` → PVC 에 데이터셋이 없음 → Step 4 확인
-
-> Code Server 에서 실행한 결과도 동일하게 S3 와 MLflow 에 저장되므로,
-> 이후 Step 9 (MLflow 확인) → Step 10 (추론 엔드포인트) 으로 바로 이어갈 수 있습니다.
-
----
-
-## Step 8. (옵션 B) Airflow DAG 실행
+### 옵션 B: Airflow DAG 실행
 
 1. `https://airflow.<your-runway-domain>` 접속
 2. DAG 목록에서 `energy_demand_prediction_<your-project-id>` 찾기
-3. DAG 토글 **활성화**
-4. **Trigger** 클릭
-5. 5개 태스크 순차 실행 확인:
+3. DAG 토글 **활성화** → **Trigger** 클릭
+4. 5개 태스크 순차 실행 확인:
+   ```
+   ensure_pull_secret → load_data → train_model → evaluate_model → log_to_mlflow
+   ```
 
-```
-ensure_pull_secret → load_data → train_model → evaluate_model → log_to_mlflow
-```
-
-각 태스크 클릭 > **Logs** 탭에서 진행 상황 확인.
+> 주의: 프로젝트 CPU 쿼터(보통 10코어)가 부족하면 Code Server 를 줄이거나 옵션 A 사용.
 
 ### 트러블슈팅
 
 | 증상 | 원인 / 대응 |
 |------|------------|
-| `ensure_pull_secret` 403 Forbidden | OpenBao 토큰 만료 → Step 5 재로그인 후 토큰 갱신 → Step 6 재push |
-| `load_data` FileNotFoundError | PVC 에 CSV 미업로드 → Step 4 확인 |
-| `load_data` KeyError 컬럼 없음 | CSV 파일 형식 불일치 → 컬럼명 확인 |
-| `train_model` OOMKilled | 메모리 부족 → DAG 의 memory_limit 증가 (2Gi → 4Gi) |
-| `log_to_mlflow` permission denied | `EXPERIMENT_NAME` 규약 위반 → `{프로젝트ID}.{실험명}` 형식 확인 |
-| `RUNWAY_BASE_DOMAIN 이 비어 있습니다` | DAG common_env_vars 에 RUNWAY_BASE_DOMAIN 누락 → 코드 확인 |
+| `OpenBao 403 Forbidden` | 토큰 만료 → OpenBao 재로그인 → 토큰 갱신 → push |
+| `FileNotFoundError` | PVC 에 데이터셋 미업로드 → Step 8 확인 |
+| `OOMKilled` | 메모리 부족 → DAG 의 memory_limit 증가 |
+| `RUNWAY_BASE_DOMAIN 이 비어 있습니다` | `.env` 또는 DAG 상수 확인 |
 
-## Step 9. MLflow 에서 모델 확인
+---
+
+## Step 12. MLflow 모델 확인
 
 1. `https://mlflow.<your-runway-domain>` 접속
 2. **Experiments** > `<your-project-id>.energy-demand-prediction` 확인
-3. 최신 run 클릭 → 파라미터/메트릭/아티팩트 확인
-4. **Registered Models** > `<your-project-id>.energy-demand-xgboost` 버전 존재 확인
+3. **Registered Models** > `<your-project-id>.energy-demand-xgboost` 버전 존재 확인
 
-## Step 10. 추론 엔드포인트 생성 + 모델 배포
+---
 
-### 10-1. 엔드포인트 생성
+## Step 13. 모델 다운로드 + 추론 엔드포인트 배포
+
+### 13-1. 모델 아티팩트 PVC 에 다운로드
+
+```bash
+source venv/bin/activate
+python download_model.py --list       # 모델 목록 확인
+python download_model.py              # 최신 모델 다운로드
+ls /mnt/data/models/                  # m-xxx 디렉토리 확인
+```
+
+### 13-2. 추론 엔드포인트 생성
 
 **Runway 콘솔 > 추론 엔드포인트 > + 생성**:
 
@@ -237,7 +297,7 @@ ensure_pull_secret → load_data → train_model → evaluate_model → log_to_m
 | 엔드포인트 ID | `energy-demand-prediction` |
 | 서빙 런타임 | `MLServer` |
 
-### 10-2. 모델 배포 추가
+### 13-3. 모델 배포 추가
 
 엔드포인트 상세 > **모델 배포** 클릭:
 
@@ -245,92 +305,88 @@ ensure_pull_secret → load_data → train_model → evaluate_model → log_to_m
 |------|-----|
 | 이름 | `Energy Demand v1` |
 | ID | `energy-demand-v1` |
-| 모델 소스 | MLflow (Step 9 에서 확인한 모델) |
+| 볼륨 | `<your-pvc-name>` |
+| 모델 경로 | `/mnt/models/m-<model-id>` |
 | CPU | `500` millicores |
 | Memory | `1024` MiB |
-| 복제본 | `1` |
 
-엔드포인트가 **Healthy** 가 되면 준비 완료 (1~3분 소요).
+> `/mnt/models` 는 추론 Pod 의 PVC 마운트 경로 (`/mnt/data` 가 아님에 주의).
+> 모델이 `/mnt/data/models/m-xxx/` 에 있으면 경로는 `/mnt/models/m-xxx` 로 입력.
 
-### 10-3. 추론 테스트 (curl)
-
-엔드포인트 상세 페이지에서 **요청 URL** 복사 후:
+### 13-4. 추론 테스트
 
 ```bash
-export RUNWAY_API_KEY="<runway_api_key>"
-export ENDPOINT="https://inference.<your-runway-domain>/api/<your-project-id>/energy-demand-prediction/energy-demand-v1"
+# .env 에 INFERENCE_ENDPOINT 추가
+# INFERENCE_ENDPOINT=https://inference.<your-runway-domain>/api/<your-project-id>/energy-demand-prediction/energy-demand-v1
 
-# 간단 테스트 (피처 4개만 — 실제로는 126개 전부 필요)
-curl -X POST "${ENDPOINT}/v2/models/default/infer" \
-  -H "Authorization: Bearer ${RUNWAY_API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "parameters": {"content_type": "pd"},
-    "inputs": [
-      {"name": "시간", "shape": [1], "datatype": "INT64", "data": [14]},
-      {"name": "요일", "shape": [1], "datatype": "INT64", "data": [3]},
-      {"name": "연중일수비율", "shape": [1], "datatype": "FP64", "data": [0.5]},
-      {"name": "공휴일", "shape": [1], "datatype": "INT64", "data": [0]}
-    ]
-  }'
+python test_inference.py
 ```
 
-> 전체 126 피처 테스트는 GUI 에서 CSV 업로드로 수행 (Step 12).
+---
 
-## Step 11. GUI 배포
+## Step 14. GUI 배포
 
-### 옵션 A: Helm Chart 로 배포 (kubectl 접근 가능 시)
+### 14-1. Helm chart 패키징 + Gitea 업로드
 
 ```bash
-helm install energy-demand-gui ./helm/gui -n <your-project-id>
+helm package helm/gui/
+
+curl -X POST \
+  --user "<gitea-username>:<gitea-token>" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @energy-demand-gui-0.4.0.tgz \
+  https://gitea.<your-runway-domain>/api/packages/<your-project-id>/helm/api/charts
 ```
 
-### 옵션 B: Runway 콘솔 카탈로그 활용
+> `helm` CLI 미설치 시: `curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash`
 
-Gitea Container Registry 에 올라간 GUI 이미지를 사용하여 범용 웹앱 차트로 배포.
-httpRoute hostname: `energy-demand.<your-runway-domain>` (또는 원하는 서브도메인)
+### 14-2. Runway 콘솔에서 배포
 
-### 배포 확인
-
-`https://energy-demand.<your-runway-domain>` 접속 → React 앱 로드 확인.
-
-## Step 12. GUI 통합 테스트
-
-### 12-1. API 설정
-
-GUI 첫 로드 시 **API 설정** 패널이 열림. 아래 값 입력:
+**Runway 콘솔 > 애플리케이션 > + 생성**:
 
 | 필드 | 값 |
 |------|-----|
-| Runway API 토큰 | OpenBao `runway_api_key` 값 |
-| 추론 엔드포인트 URL | `https://inference.<your-runway-domain>/api/<your-project-id>/energy-demand-prediction/energy-demand-v1` |
+| Helm 리포지토리 URL | `https://gitea.<your-runway-domain>/api/packages/<your-project-id>/helm` |
+| 사용자 이름 | Gitea 로그인명 |
+| 비밀번호 | Gitea 액세스 토큰 |
+| 차트 | `energy-demand-gui` |
+| 버전 | `0.4.0` |
+
+### 14-3. 접속 확인
+
+`https://<your-gui-hostname>.<your-runway-domain>` 접속 → React 앱 로드 확인.
+
+> HTTPRoute 가 동작하려면 `parentRefs` (platform-core-gateway) 가 설정되어 있어야 합니다 (이미 Helm chart 에 포함).
+
+---
+
+## Step 15. GUI 통합 테스트
+
+### 15-1. API 설정
+
+GUI 첫 로드 시 **API 설정** 패널이 열림. 아래 값 입력:
+
+| 필드 | 값 (Runway 배포 시) |
+|------|-----|
+| Runway API 토큰 | Step 0 의 Runway API 토큰 |
+| 추론 엔드포인트 URL | `/api/inference/<your-project-id>/energy-demand-prediction/energy-demand-v1` |
 | Deployment ID | `default` |
-| Airflow URL | `https://airflow.<your-runway-domain>` |
-| Airflow Username | Airflow 로그인명 |
-| Airflow Password | Airflow 비밀번호 |
+| Airflow URL | `/api/airflow` |
+| Airflow 토큰 | 브라우저 DevTools > Network > Authorization 헤더에서 복사 |
 | DAG ID | `energy_demand_prediction_<your-project-id>` |
 
-**저장** 클릭.
+> 로컬 개발 시: 추론 엔드포인트를 `/api/inference/...` 로, Airflow URL 을 `/api/airflow` 로 입력 (Vite 프록시 경유).
 
-### 12-2. 추론 테스트
+### 15-2. 추론 테스트
 
-1. 헤더의 **추론 데이터 업로드** 클릭
-2. `Q1_test_x.csv` 업로드
-3. 자동 일괄 추론 실행 → 72시간 예측 결과 생성
-4. **예측** 탭에서 차트 확인 (과거 실측 + 예측 라인)
+1. **추론 데이터 업로드** → CSV 업로드 → 72시간 예측 차트
+2. **실측 데이터 업로드** → 예측 vs 실측 비교 + 메트릭
 
-### 12-3. 실측 비교 테스트
+### 15-3. 재학습 트리거
 
-1. 헤더의 **실측 데이터 업로드** 클릭
-2. `Q1_test_xy.csv` 업로드
-3. 예측 vs 실측 비교 차트 표시
-4. 상단 메트릭 카드에 정확도/MAPE/MAE 확인
-
-### 12-4. 재학습 트리거 테스트
-
-1. 전체 정확도가 임계값(85%) 이하이면 **재학습** 버튼 표시됨
-2. 재학습 클릭 → Airflow REST API 로 DAG trigger
-3. `https://airflow.<your-runway-domain>` 에서 새 DAG Run 생성 확인
+1. 전체 정확도가 임계값(85%) 이하이면 **재학습** 버튼 표시
+2. 클릭 → Airflow DAG trigger (Q1+Q2+Q3 학습)
+3. `https://airflow.<your-runway-domain>` 에서 새 DAG Run 확인
 
 ---
 
@@ -338,21 +394,20 @@ GUI 첫 로드 시 **API 설정** 패널이 열림. 아래 값 입력:
 
 ### 재실행 시
 
-같은 구성으로 다시 돌릴 때는 **Step 8 (DAG 실행)** 부터.
-코드 수정 시 `git push` → CI/CD 자동 동작 → Airflow 재실행.
+같은 구성으로 다시 돌릴 때는 **Step 11 (모델 학습)** 부터.
+코드 수정 시 `git push` → CI/CD 자동 동작.
 
 ### 삭제 순서
 
 1. 추론 엔드포인트 → 모델 배포 삭제 → 엔드포인트 삭제
-2. GUI 앱 (Helm uninstall 또는 카탈로그 삭제)
+2. GUI 앱 삭제
 3. Code Server 삭제 (볼륨은 유지 가능)
-4. 스토리지 → `energy-demand-data` 삭제 (재사용 시 유지)
+4. 스토리지 삭제 (재사용 시 유지)
 5. Gitea 저장소 / Actions Secrets / OpenBao 시크릿은 재사용 가능
 
 ### OpenBao 토큰 만료 시
 
 1. OpenBao 콘솔 재로그인 → 프로필 → Copy token
 2. `energy_demand_prediction.py` 상단 `OPENBAO_TOKEN` 갱신
-3. `git push` → sync-dag 자동 실행 → Airflow 재파싱
-4. DAG 재실행
-
+3. `.env` 파일의 `OPENBAO_TOKEN` 도 갱신 (Code Server 수동 실행 시)
+4. `git push` → sync-dag 자동 실행 → Airflow 재파싱
