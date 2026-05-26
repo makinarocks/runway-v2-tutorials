@@ -1,0 +1,100 @@
+# .gitea/workflows/sync-dag.yml
+#
+# DAG 자동 동기화 — energy_demand_prediction.py → airflow-dags 저장소
+#
+# 사전 준비 (Gitea 저장소 Settings > Secrets and Variables > Actions):
+#   GIT_USERNAME : Gitea 로그인 사용자명
+#   GIT_TOKEN    : Gitea 접근 토큰 (airflow-dags 저장소 write 권한 필요)
+
+name: Sync DAG to airflow-dags
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "energy_demand_prediction.py"
+
+jobs:
+  sync-dag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure jq is available
+        run: |
+          if command -v jq >/dev/null 2>&1; then
+            echo "jq 이미 설치됨: $(jq --version)"
+            exit 0
+          fi
+          SUDO=""
+          if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            SUDO="sudo"
+          fi
+          if command -v apt-get >/dev/null 2>&1; then
+            $SUDO apt-get update && $SUDO apt-get install -y jq
+          elif command -v apk >/dev/null 2>&1; then
+            $SUDO apk add --no-cache jq
+          else
+            echo "❌ jq 를 설치할 패키지 매니저를 찾지 못했습니다"
+            exit 1
+          fi
+
+      - name: Sync DAG via Gitea API
+        env:
+          API_TOKEN: ${{ secrets.GIT_TOKEN }}
+        run: |
+          DEST_PATH="energy_demand_prediction/energy_demand_prediction.py"
+          DAGS_REPO="airflow-dags"
+          API_BASE="${{ github.server_url }}/api/v1/repos/${{ github.repository_owner }}/${DAGS_REPO}"
+          BRANCH="main"
+
+          CONTENT=$(base64 -w 0 energy_demand_prediction.py 2>/dev/null || base64 energy_demand_prediction.py | tr -d '\n')
+
+          FILE_SHA=$(curl -s \
+            -H "Authorization: token ${API_TOKEN}" \
+            "${API_BASE}/contents/${DEST_PATH}?ref=${BRANCH}" \
+            | jq -r '.sha // empty')
+
+          COMMIT_MSG="chore: sync energy_demand_prediction DAG (from ${{ github.repository }}@${{ github.sha }})"
+
+          if [ -z "${FILE_SHA}" ]; then
+            echo "신규 파일 생성..."
+            PAYLOAD=$(jq -n \
+              --arg msg "${COMMIT_MSG}" \
+              --arg content "${CONTENT}" \
+              --arg branch "${BRANCH}" \
+              '{"message":$msg,"content":$content,"branch":$branch}')
+            HTTP_CODE=$(curl -s -o /tmp/api_response.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: token ${API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "${PAYLOAD}" \
+              "${API_BASE}/contents/${DEST_PATH}")
+          else
+            echo "기존 파일 업데이트 (SHA: ${FILE_SHA})..."
+            PAYLOAD=$(jq -n \
+              --arg msg "${COMMIT_MSG}" \
+              --arg content "${CONTENT}" \
+              --arg branch "${BRANCH}" \
+              --arg sha "${FILE_SHA}" \
+              '{"message":$msg,"content":$content,"branch":$branch,"sha":$sha}')
+            HTTP_CODE=$(curl -s -o /tmp/api_response.json -w "%{http_code}" \
+              -X PUT \
+              -H "Authorization: token ${API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "${PAYLOAD}" \
+              "${API_BASE}/contents/${DEST_PATH}")
+          fi
+
+          echo "API 응답 코드: ${HTTP_CODE}"
+          if [ "${HTTP_CODE}" != "200" ] && [ "${HTTP_CODE}" != "201" ]; then
+            echo "❌ API 호출 실패"
+            cat /tmp/api_response.json
+            exit 1
+          fi
+          echo "✅ DAG 동기화 완료"
+          echo "   SOURCE : energy_demand_prediction.py"
+          echo "   DEST   : ${DEST_PATH}"
