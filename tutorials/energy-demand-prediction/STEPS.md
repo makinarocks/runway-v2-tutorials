@@ -20,15 +20,55 @@
 
 ---
 
-## Step 1. Gitea 레포 생성 + 코드 push
+## Step 1. PVC 생성
 
-### 1-1. GitHub 에서 튜토리얼 코드 가져오기
+**Runway 콘솔 > 프로젝트 > 스토리지 > + 생성**:
 
-```bash
-git clone git@github.com:makinarocks/runway-v2-tutorials.git
+| 필드 | 값 |
+|------|-----|
+| 볼륨 ID | `<your-pvc-name>` (예: `energy-pred-fs`) |
+| 스토리지 클래스 | `ceph-filesystem` |
+| 접근 모드 | **ReadWriteMany** (필수! RWO 는 Multi-Attach 에러 발생) |
+| 크기 | `5` GiB |
+
+생성 후 목록에서 `Bound` 상태 확인.
+
+> 이 PVC 는 데이터셋 + 모델 아티팩트 + Code Server 작업 공간으로 공용 사용됩니다.
+
+---
+
+## Step 2. Code Server 배포 + PVC 마운트
+
+**Runway 콘솔 > 카탈로그 > Code Server** 배포.
+
+### 기본 정보
+
+| 필드 | 값 (예시) |
+|------|----------|
+| 이름 | `Energy Prediction IDE` |
+| ID | `energy-prediction-server` |
+
+### values.yaml 수정
+
+```yaml
+persistence:
+  enabled: true
+  mountPath: /mnt/data
+  existingClaim: <your-pvc-name>    # Step 1 에서 만든 볼륨 ID
+
+httpRoute:
+  enabled: true
+  hostname: "<your-ide-hostname>.<your-runway-domain>"
 ```
 
-### 1-2. Gitea 에 빈 레포 생성
+### 접속
+
+생성 후 **리소스 현황 > 링크 추가** 에서 URL 등록.
+`https://<your-ide-hostname>.<your-runway-domain>` 접속 → 브라우저 VS Code.
+
+---
+
+## Step 3. Gitea 레포 생성
 
 1. `https://gitea.<your-runway-domain>` 접속
 2. 우측 상단 **+ → 새 저장소 만들기**
@@ -38,40 +78,57 @@ git clone git@github.com:makinarocks/runway-v2-tutorials.git
 6. **저장소 초기화**: 체크 (README.md 자동 생성)
 7. **저장소 만들기**
 
-### 1-3. 코드 복사 + push
-
-```bash
-# Gitea 레포 clone
-cd ~/workspace
-git clone https://gitea.<your-runway-domain>/<your-project-id>/energy-demand-prediction.git
-cd energy-demand-prediction
-
-# 튜토리얼 코드 복사
-cp -r ~/runway-v2-tutorials/tutorials/energy-demand-prediction/* .
-cp -r ~/runway-v2-tutorials/tutorials/energy-demand-prediction/.gitea .
-cp ~/runway-v2-tutorials/tutorials/energy-demand-prediction/.gitignore .
-cp ~/runway-v2-tutorials/tutorials/energy-demand-prediction/.env.example .
-
-# 자격증명 캐시 (최초 1회)
-git config --global credential.helper store
-```
-
 ---
 
-## Step 2. 플레이스홀더 값 수정
+## Step 4. 코드 복사 + 플레이스홀더 수정
+
+Code Server 터미널에서:
+
+### 4-1. Git 설정 + clone
+
+```bash
+cd ~/workspace
+
+git config --global user.name "<your-name>"
+git config --global user.email "<your-email>"
+git config --global credential.helper store
+
+# Gitea 레포 clone
+git clone https://gitea.<your-runway-domain>/<your-project-id>/energy-demand-prediction.git
+cd energy-demand-prediction
+```
+
+### 4-2. 튜토리얼 코드 복사
+
+```bash
+# GitHub 에서 레퍼런스 코드 clone (별도 인증 불필요 — public)
+cd ~/workspace
+git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
+
+# 튜토리얼 소스를 본인 레포로 복사
+cd reference/tutorials/energy-demand-prediction
+cp -r .gitea Dockerfile Dockerfile.gui requirements.txt config.py task_runner.py \
+      energy_demand_prediction.py download_model.py test_inference.py setup.sh \
+      gui helm .env.example .gitignore ~/workspace/energy-demand-prediction/
+
+# reference 삭제
+cd ~/workspace && rm -rf reference
+```
+
+### 4-3. 플레이스홀더 값 수정
 
 **6개 파일**에서 `<your-...>` 값을 본인 환경으로 교체:
 
-### ① `energy_demand_prediction.py` (DAG) — 4곳
+#### ① `energy_demand_prediction.py` (DAG) — 4곳
 
 ```python
 RUNWAY_PROJECT_ID  = "<your-project-id>"        # 본인 프로젝트 ID
 RUNWAY_BASE_DOMAIN = "<your-runway-domain>"      # 예: try.mrxrunway.ai
 OPENBAO_TOKEN      = "<your-openbao-token>"      # Step 0 에서 발급한 OpenBao 토큰
-PVC_NAME           = "<your-pvc-name>"           # Step 5 에서 생성할 PVC 볼륨 ID
+PVC_NAME           = "<your-pvc-name>"           # Step 1 에서 생성한 PVC 볼륨 ID
 ```
 
-### ② `gui/nginx.conf` — 2곳
+#### ② `gui/nginx.conf` — 2곳
 
 ```nginx
 proxy_pass https://inference.<your-runway-domain>/api/;
@@ -81,7 +138,7 @@ proxy_pass https://airflow.<your-runway-domain>/;
 proxy_set_header Host airflow.<your-runway-domain>;
 ```
 
-### ③ `gui/vite.config.js` — 2곳 (로컬 개발용)
+#### ③ `gui/vite.config.js` — 2곳 (로컬 개발용)
 
 ```javascript
 target: 'https://inference.<your-runway-domain>',
@@ -89,7 +146,7 @@ target: 'https://inference.<your-runway-domain>',
 target: 'https://airflow.<your-runway-domain>',
 ```
 
-### ④ `helm/gui/values.yaml` — 2곳
+#### ④ `helm/gui/values.yaml` — 2곳
 
 ```yaml
 image:
@@ -100,9 +157,10 @@ httpRoute:
 
 ---
 
-## Step 3. 첫 push
+## Step 5. 첫 push
 
 ```bash
+cd ~/workspace/energy-demand-prediction
 git add .
 git commit -m "feat: initial energy-demand-prediction setup"
 git push origin main
@@ -110,7 +168,7 @@ git push origin main
 
 ---
 
-## Step 4. Gitea Actions Secrets 등록
+## Step 6. Gitea Actions Secrets 등록
 
 레포 **Settings > Secrets and Variables > Actions** 에 4개 등록:
 
@@ -123,22 +181,7 @@ git push origin main
 
 ---
 
-## Step 5. PVC 생성
-
-**Runway 콘솔 > 프로젝트 > 스토리지 > + 생성**:
-
-| 필드 | 값 |
-|------|-----|
-| 볼륨 ID | `<your-pvc-name>` (Step 2 의 PVC_NAME 과 일치) |
-| 스토리지 클래스 | `ceph-filesystem` |
-| 접근 모드 | **ReadWriteMany** (필수! RWO 는 Multi-Attach 에러 발생) |
-| 크기 | `5` GiB |
-
-생성 후 목록에서 `Bound` 상태 확인.
-
----
-
-## Step 6. CI/CD 워크플로우 트리거 + 확인
+## Step 7. CI/CD 워크플로우 트리거 + 확인
 
 Secrets 등록 후 워크플로우를 트리거합니다:
 
@@ -151,23 +194,6 @@ Gitea Actions 탭에서 3개 워크플로우 확인:
 - **Build ML Image** — ✅ 녹색 확인 (5~10분)
 - **Build GUI Image** — ✅ 녹색 확인
 - **Sync DAG** — ✅ 녹색 확인
-
----
-
-## Step 7. Code Server 배포 + PVC 마운트
-
-**Runway 콘솔 > 카탈로그 > Code Server** 배포.
-
-values.yaml 에서 PVC 연결:
-
-```yaml
-persistence:
-  enabled: true
-  mountPath: /mnt/data
-  existingClaim: <your-pvc-name>
-```
-
-httpRoute hostname 도 설정하여 외부 접속 가능하게.
 
 ---
 
@@ -255,7 +281,7 @@ python task_runner.py --step log_to_mlflow
    ensure_pull_secret → load_data → train_model → evaluate_model → log_to_mlflow
    ```
 
-> 주의: 프로젝트 CPU 쿼터(보통 10코어)가 부족하면 Code Server 를 줄이거나 옵션 A 사용.
+> 주의: 프로젝트 CPU 쿼터(보통 10코어)가 부족하면 Code Server 리소스를 줄이거나 옵션 A 사용.
 
 ### 트러블슈팅
 
@@ -375,7 +401,7 @@ GUI 첫 로드 시 **API 설정** 패널이 열림. 아래 값 입력:
 | Airflow 토큰 | 브라우저 DevTools > Network > Authorization 헤더에서 복사 |
 | DAG ID | `energy_demand_prediction_<your-project-id>` |
 
-> 로컬 개발 시: 추론 엔드포인트를 `/api/inference/...` 로, Airflow URL 을 `/api/airflow` 로 입력 (Vite 프록시 경유).
+> 로컬 개발 시에도 동일 경로 사용 (Vite 프록시 경유).
 
 ### 15-2. 추론 테스트
 
