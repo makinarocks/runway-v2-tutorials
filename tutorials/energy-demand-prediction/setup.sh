@@ -37,23 +37,39 @@ if command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
   SUDO="sudo"
 fi
 
-# 1) Python 3.10 설치 (없으면)
+# 1) Python 3.10 설치 (필수 — MLServer 가 3.10 기반이라 pickle 호환성 필요)
 if ! command -v $PYTHON_TARGET &>/dev/null; then
   echo "[setup] $PYTHON_TARGET 미설치 — 설치합니다..."
   $SUDO apt-get update
 
-  # Ubuntu (deadsnakes PPA) vs Debian (소스 빌드) 분기
-  if command -v add-apt-repository &>/dev/null || $SUDO apt-get install -y software-properties-common 2>/dev/null; then
-    $SUDO add-apt-repository -y ppa:deadsnakes/ppa 2>/dev/null || true
+  # 방법 1: Ubuntu — deadsnakes PPA
+  if [ -f /etc/lsb-release ] && command -v add-apt-repository &>/dev/null 2>&1; then
+    $SUDO apt-get install -y software-properties-common
+    $SUDO add-apt-repository -y ppa:deadsnakes/ppa
     $SUDO apt-get update
-    $SUDO apt-get install -y python3.10 python3.10-venv python3.10-dev 2>/dev/null
-  fi
+    $SUDO apt-get install -y python3.10 python3.10-venv python3.10-dev
+  else
+    # 방법 2: Debian / 기타 — pyenv 로 3.10 설치
+    echo "[setup] Debian 감지 — pyenv 로 Python 3.10 설치합니다..."
+    $SUDO apt-get install -y build-essential libssl-dev zlib1g-dev \
+      libbz2-dev libreadline-dev libsqlite3-dev curl libncursesw5-dev \
+      xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev git
 
-  # PPA 실패 또는 Debian 이면 시스템 python3 으로 fallback
-  if ! command -v $PYTHON_TARGET &>/dev/null; then
-    echo "[setup] python3.10 설치 실패 — 시스템 python3 으로 fallback"
-    $SUDO apt-get install -y python3 python3-venv python3-dev
-    PYTHON_TARGET="python3"
+    export PYENV_ROOT="$HOME/.pyenv"
+    if [ ! -d "$PYENV_ROOT" ]; then
+      curl -fsSL https://pyenv.run | bash
+    fi
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init -)"
+
+    pyenv install -s 3.10
+    PYTHON_TARGET="$PYENV_ROOT/versions/3.10*/bin/python3.10"
+    PYTHON_TARGET=$(ls $PYTHON_TARGET 2>/dev/null | head -1)
+
+    if [ -z "$PYTHON_TARGET" ] || [ ! -x "$PYTHON_TARGET" ]; then
+      echo "[setup] ❌ Python 3.10 설치 실패. 수동으로 설치해주세요."
+      exit 1
+    fi
   fi
   echo "[setup] Python 설치 완료: $($PYTHON_TARGET --version)"
 else
