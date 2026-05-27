@@ -66,13 +66,21 @@ resources:
 
 persistence:
   enabled: true
-  mountPath: /mnt/data
-  existingClaim: <your-pvc-name>    # Step 1 에서 만든 볼륨 ID
+  accessMode: ReadWriteOnce
+  size: 1Gi
+
+extraPVCs:
+  - name: energy-pred-data           # "data" 같은 짧은 이름은 충돌 가능 — 고유 이름 사용
+    mountPath: /mnt/data
+    existingClaim: <your-pvc-name>   # Step 1 에서 만든 볼륨 ID
+    readOnly: false
 
 httpRoute:
   enabled: true
   hostname: "<your-ide-hostname>.<your-runway-domain>"
 ```
+
+> `persistence`는 Code Server 기본 홈 볼륨 (/config). `extraPVCs`로 데이터/모델용 PVC를 별도 마운트.
 
 ### 접속
 
