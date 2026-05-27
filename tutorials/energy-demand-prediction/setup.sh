@@ -39,13 +39,23 @@ fi
 
 # 1) Python 3.10 설치 (없으면)
 if ! command -v $PYTHON_TARGET &>/dev/null; then
-  echo "[setup] $PYTHON_TARGET 미설치 — apt 로 설치합니다..."
+  echo "[setup] $PYTHON_TARGET 미설치 — 설치합니다..."
   $SUDO apt-get update
-  $SUDO apt-get install -y software-properties-common
-  $SUDO add-apt-repository -y ppa:deadsnakes/ppa
-  $SUDO apt-get update
-  $SUDO apt-get install -y python3.10 python3.10-venv python3.10-dev
-  echo "[setup] $PYTHON_TARGET 설치 완료: $($PYTHON_TARGET --version)"
+
+  # Ubuntu (deadsnakes PPA) vs Debian (소스 빌드) 분기
+  if command -v add-apt-repository &>/dev/null || $SUDO apt-get install -y software-properties-common 2>/dev/null; then
+    $SUDO add-apt-repository -y ppa:deadsnakes/ppa 2>/dev/null || true
+    $SUDO apt-get update
+    $SUDO apt-get install -y python3.10 python3.10-venv python3.10-dev 2>/dev/null
+  fi
+
+  # PPA 실패 또는 Debian 이면 시스템 python3 으로 fallback
+  if ! command -v $PYTHON_TARGET &>/dev/null; then
+    echo "[setup] python3.10 설치 실패 — 시스템 python3 으로 fallback"
+    $SUDO apt-get install -y python3 python3-venv python3-dev
+    PYTHON_TARGET="python3"
+  fi
+  echo "[setup] Python 설치 완료: $($PYTHON_TARGET --version)"
 else
   echo "[setup] $PYTHON_TARGET 이미 설치됨: $($PYTHON_TARGET --version)"
 fi
