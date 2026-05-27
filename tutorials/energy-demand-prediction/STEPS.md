@@ -114,18 +114,15 @@ cd energy-demand-prediction
 ### 4-2. 튜토리얼 코드 복사
 
 ```bash
-# GitHub 에서 레퍼런스 코드 clone (별도 인증 불필요 — public)
+# GitHub 에서 레퍼런스 코드 clone
 cd ~/workspace
 git clone https://github.com/makinarocks/runway-v2-tutorials.git reference
 
-# 튜토리얼 소스를 본인 레포로 복사
-cd reference/tutorials/energy-demand-prediction
-cp -r .gitea Dockerfile Dockerfile.gui requirements.txt config.py task_runner.py \
-      energy_demand_prediction.py download_model.py test_inference.py setup.sh \
-      gui helm .env.example .gitignore ~/workspace/energy-demand-prediction/
+# 튜토리얼 소스를 통째로 복사 (.git 제외)
+cp -r reference/tutorials/energy-demand-prediction/. ~/workspace/energy-demand-prediction/
 
 # reference 삭제
-cd ~/workspace && rm -rf reference
+rm -rf reference
 ```
 
 ### 4-3. 플레이스홀더 값 수정
