@@ -1,0 +1,16 @@
+replicaCount: 1
+
+image:
+  repository: gitea.<your-runway-domain>/<your-project-id>/energy-gui
+  tag: latest
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: gitea-registry-pull
+
+service:
+  port: 80
+
+httpRoute:
+  enabled: true
+  hostname: "<your-gui-hostname>.<your-runway-domain>"
