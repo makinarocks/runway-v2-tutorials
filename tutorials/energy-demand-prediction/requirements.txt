@@ -1,0 +1,9 @@
+pandas>=2.0
+numpy>=1.24
+xgboost>=2.0
+scikit-learn>=1.3
+mlflow>=2.10
+boto3>=1.28
+hvac>=2.1
+python-dotenv>=1.0
+requests>=2.31
