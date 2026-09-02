@@ -2,8 +2,8 @@
 task_runner.py — 에너지 수요 예측 4-step 파이프라인 실행기
 
 실행 방식 두 가지 (둘 다 같은 코드):
-  - Code Server 수동: `python task_runner.py --step <step>` (Step 4 본문)
-  - Airflow KubernetesPodOperator: Pod 안에서 같은 명령 실행 (Step 7 자동화)
+  - 개발 환경에서 수동 실행: `python task_runner.py --step <step>`
+  - Airflow KubernetesPodOperator: Pod 안에서 같은 명령을 실행
 
 데이터셋은 PVC(/mnt/data/dataset/) 에서 읽고, 태스크 간 아티팩트는 S3 로 공유한다.
 

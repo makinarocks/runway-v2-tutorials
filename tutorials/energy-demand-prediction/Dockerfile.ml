@@ -4,7 +4,7 @@
 #
 # Airflow DAG(`energy/dag/energy.py`)가 KubernetesPodOperator 로 이 이미지를 띄우고
 # `python /app/task_runner.py --step <load_data|train_model|evaluate_model|log_to_mlflow|copy_model_to_pvc>`
-# 를 실행한다. 4단계 학습 파이프라인이 모두 이 이미지 안에서 돈다.
+# 를 실행한다. 학습 파이프라인의 모든 스텝이 이 이미지 안에서 돈다.
 #
 # ## 이미지 내부 구성
 #
@@ -35,13 +35,8 @@
 
 # Python 3.10 slim.
 #
-# ⚠️ **3.10 을 벗어나면 안 된다.** 4단계에서 모델을 서빙하는 MLServer 가 Python 3.10 기반이라,
+# ⚠️ **3.10 을 유지한다.** 모델을 서빙하는 MLServer 가 Python 3.10 기반이라,
 # 다른 버전으로 학습하면 cloudpickle 로 직렬화된 모델을 MLServer 가 읽지 못한다.
-# 3.11 로 만들었을 때 실제로 아래 오류가 났다 (2026-09-02):
-#
-#     TypeError: code expected at most 16 arguments, got 18
-#
-# 가이드 2-3 이 Code Server 가상 환경을 3.10 으로 맞추라고 안내하는 것과 같은 이유다.
 FROM python:3.10-slim
 
 WORKDIR /app

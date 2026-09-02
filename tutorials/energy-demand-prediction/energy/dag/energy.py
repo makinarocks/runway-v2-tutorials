@@ -99,9 +99,8 @@ RUNWAY_PROJECT_ID = os.environ["RUNWAY_PROJECT_ID"]
 PVC_NAME          = os.environ["PVC_NAME"]
 ML_IMAGE          = os.environ["ML_IMAGE"]
 
-# Agent Injector 의 Kubernetes auth role. v2.2.1 부터 플랫폼이 "default" 로 고정 제공하며
-# OpenBao 에 openbao_role 키를 등록하지 않는다. (1.3.x 코드는 os.environ["OPENBAO_ROLE"] 를
-# 읽고 있어서 DAG import 가 KeyError 로 실패했다 — 2026-09-01 발견)
+# Agent Injector 의 Kubernetes auth role. 플랫폼이 "default" 로 고정 제공하므로
+# OpenBao 에 openbao_role 키를 등록하지 않는다.
 OPENBAO_ROLE = os.environ.get("OPENBAO_ROLE", "default")
 
 # OpenBao namespace 는 본 튜토리얼 약속에 의해 K8s namespace 와 같음
@@ -130,9 +129,8 @@ USE_GPU = False
 _ENV_PRELUDE = (
     "for f in /vault/secrets/energy.env /vault/secrets/creds.env; do "
     "[ -f \"$f\" ] || continue; "
-    # `|| [ -n "$k" ]` — Agent Injector 가 만드는 파일은 **끝에 개행이 없다**(2026-09-02 확인).
-    # 이 조건이 없으면 while read 가 마지막 키를 통째로 버린다(키가 알파벳 순이라
-    # runway_project_id 가 마지막이었고, 정확히 그 값이 비었다).
+    # `|| [ -n "$k" ]` — Agent Injector 가 만드는 파일은 **끝에 개행이 없다.**
+    # 이 조건이 없으면 while read 가 마지막 한 줄을 통째로 버린다.
     "while IFS='=' read -r k v || [ -n \"$k\" ]; do "
     "k=\"${k#export }\"; [ -n \"$k\" ] || continue; "
     "v=\"${v%\\\"}\"; v=\"${v#\\\"}\"; "

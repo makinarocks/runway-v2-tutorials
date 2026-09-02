@@ -48,7 +48,7 @@ _load_secret_env()
 # 옛 파일명도 함께 시도한다(1.3.x 호환). 위에서 채워진 값은 setdefault 라 덮이지 않는다.
 _load_secret_env("/vault/secrets/creds.env")
 
-# OpenBao 에 등록한 2개 base 값 (0단계에서 등록)
+# OpenBao 에 등록한 2개 base 값
 RUNWAY_PROJECT_ID  = os.environ["RUNWAY_PROJECT_ID"]
 RUNWAY_BASE_DOMAIN = os.environ["RUNWAY_BASE_DOMAIN"]
 
@@ -68,10 +68,32 @@ DATA_BASE           = "/mnt/data/dataset"
 MODEL_REGISTRY_PATH = "/mnt/data"
 S3_ARTIFACT_PREFIX  = "mlflow/experiments/energy/models/"
 
-# 추론 엔드포인트 (Step 5 부터 사용) — 풀 URL 한 줄
+# 추론 엔드포인트 — 풀 URL 한 줄. 모델을 배포한 뒤 채운다.
 # 예: https://inference.<domain>/api/<proj>/<ep>/<deploy>/v2/models/default/infer
 INFERENCE_ENDPOINT   = os.getenv("INFERENCE_ENDPOINT", "")
 INFERENCE_VERIFY_TLS = os.getenv("INFERENCE_VERIFY_TLS", "true").lower() == "true"
+
+
+def _use_system_ca_bundle() -> None:
+    """사설 CA 환경에서 `requests` 가 TLS 검증에 실패하지 않도록 CA 번들을 지정한다.
+
+    플랫폼 루트 CA 는 **시스템 번들**(/etc/ssl/certs/ca-certificates.crt) 에 들어 있다.
+    그런데 `requests` 는 시스템 번들이 아니라 **certifi 번들**을 쓰기 때문에,
+    사설 CA 환경에서는 같은 주소가 CERTIFICATE_VERIFY_FAILED 로 실패한다.
+
+    시스템 번들이 있으면 그것을 쓰도록 REQUESTS_CA_BUNDLE 을 채운다.
+    - 이미 지정돼 있으면 건드리지 않는다(사용자 지정이 우선).
+    - 공인 CA 로 발급된 환경에서도 시스템 번들에는 공인 루트가 다 들어 있으므로 무해하다.
+    - 파일이 없으면 아무 것도 하지 않는다.
+    """
+    if os.environ.get("REQUESTS_CA_BUNDLE"):
+        return
+    system_bundle = "/etc/ssl/certs/ca-certificates.crt"
+    if os.path.exists(system_bundle):
+        os.environ["REQUESTS_CA_BUNDLE"] = system_bundle
+
+
+_use_system_ca_bundle()
 
 
 def load_secrets() -> dict:
