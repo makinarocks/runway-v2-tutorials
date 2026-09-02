@@ -142,6 +142,27 @@ _ENV_PRELUDE = (
 )
 
 # =============================================================================
+# [사설 CA] 플랫폼 루트 인증서를 시스템 번들에 덧붙인다
+# -----------------------------------------------------------------------------
+# 사설 인증서(Private CA)를 쓰는 환경에서는 S3·MLflow 접속이
+# `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` 로 실패한다.
+# ML 이미지는 python:3.11-slim 기반이라 사설 CA 를 신뢰하지 않기 때문이다.
+#
+# 플랫폼이 프로젝트마다 제공하는 `platform-root-ca` Secret 을 마운트해서
+# **시스템 번들 뒤에 이어 붙인다.** 교체가 아니라 추가라서 공인 CA 로 발급된
+# 엔드포인트도 그대로 검증된다. Secret 이 없는 환경에서는 파일이 없으므로
+# 아무 것도 하지 않는다(볼륨은 optional).
+# =============================================================================
+_CA_PRELUDE = (
+    'if [ -s /runway/ca/ca.crt ]; then '
+    'cat /etc/ssl/certs/ca-certificates.crt /runway/ca/ca.crt > /tmp/ca-bundle.crt 2>/dev/null '
+    '&& export AWS_CA_BUNDLE=/tmp/ca-bundle.crt '
+    'REQUESTS_CA_BUNDLE=/tmp/ca-bundle.crt '
+    'SSL_CERT_FILE=/tmp/ca-bundle.crt; '
+    'fi; '
+)
+
+# =============================================================================
 # [DAG 정의]
 # =============================================================================
 DAG_ID = f"energy_demand_prediction_{RUNWAY_PROJECT_ID}"
@@ -212,9 +233,15 @@ with DAG(
                 name="data",
                 persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name=PVC_NAME),
             ),
+            # 사설 CA 환경 대응. optional=True 라 Secret 이 없는 환경에서도 Pod 이 뜬다.
+            k8s.V1Volume(
+                name="runway-ca",
+                secret=k8s.V1SecretVolumeSource(secret_name="platform-root-ca", optional=True),
+            ),
         ],
         volume_mounts=[
             k8s.V1VolumeMount(name="data", mount_path="/mnt/data", read_only=False),
+            k8s.V1VolumeMount(name="runway-ca", mount_path="/runway/ca", read_only=True),
         ],
         cmds=["/bin/bash", "-c"],
         get_logs=True,
@@ -241,7 +268,7 @@ with DAG(
             # 그래도 두는 이유는 **옛 이미지(1.3.x) 호환**이다 — 그쪽 config.py 는 파일을 읽지
             # 않고 os.environ 만 보므로, 셸에서 미리 채워 주지 않으면 KeyError 로 죽는다.
             # 새 이미지에서는 config.py 의 setdefault 가 같은 값을 유지하므로 무해하다.
-            arguments=[f"{_ENV_PRELUDE}python /app/task_runner.py --step {step}"],
+            arguments=[f"{_CA_PRELUDE}{_ENV_PRELUDE}python /app/task_runner.py --step {step}"],
             container_resources=k8s.V1ResourceRequirements(
                 requests=requests, limits=limits,
             ),
