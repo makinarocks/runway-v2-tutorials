@@ -1058,7 +1058,7 @@ export default function EnergyDemandMLOpsSystem() {
         `${airflowBase}/api/v2/dags/${apiSettings.dagId}/dagRuns`,
         {
           logical_date: new Date().toISOString(),
-          conf: { train_files: "Q1.csv,Q2.csv,Q3.csv" },
+          conf: {},
         },
         { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
       );

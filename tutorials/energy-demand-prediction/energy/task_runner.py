@@ -9,8 +9,8 @@ task_runner.py — 에너지 수요 예측 4-step 파이프라인 실행기
 
 데이터 구조:
   /mnt/data/dataset/
-  ├── pred-demo-dataset/   # 학습용 (Q1.csv, Q2.csv, Q3.csv)
-  └── pred-demo-testset/   # 평가용 (Q1.csv, Q2.csv, Q3.csv, Q4.csv)
+  ├── pred-demo-dataset/   # 학습용 (수집 기간별 CSV. 디렉터리의 모든 *.csv 를 학습에 사용)
+  └── pred-demo-testset/   # 평가용 (파일명이 그대로 메트릭 이름이 된다)
 
 학습 데이터:
   - PVC `/mnt/data/dataset/pred-demo-dataset/` 안의 모든 *.csv 자동 학습

@@ -35,10 +35,10 @@ from task_runner import resolve_col_specs, FEATURE_COL_SPECS, TARGET_COL_SPECS
 # 테스트 CSV 기본 경로
 DEFAULT_CSV = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "dataset", "pred-demo-testset", "Q1.csv"
+    "dataset", "pred-demo-testset", "Q1_2024.csv"
 )
 # PVC 경로 fallback
-PVC_CSV = "/mnt/data/dataset/pred-demo-testset/Q1.csv"
+PVC_CSV = "/mnt/data/dataset/pred-demo-testset/Q1_2024.csv"
 
 
 def resolve_token(cli_token):
