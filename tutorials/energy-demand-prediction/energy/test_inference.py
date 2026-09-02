@@ -46,7 +46,7 @@ def resolve_token(cli_token):
 
     우선순위:
       1. --token CLI 인자
-      2. RUNWAY_API_KEY env (Agent Injector 가 /vault/secrets/creds.env 로 주입)
+      2. RUNWAY_API_KEY env (config.py 가 /vault/secrets/energy.env 를 읽어 적재)
       3. config.load_secrets() 의 dict (Agent Injector env 가 비어도 시도)
     """
     if cli_token:

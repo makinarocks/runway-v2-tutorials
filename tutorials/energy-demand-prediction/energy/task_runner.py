@@ -52,8 +52,11 @@ AWS_SECRET_ACCESS_KEY: str = ""
 
 
 def _initialize_secrets() -> None:
-    """Agent Injector 가 /vault/secrets/creds.env 로 주입한 시크릿을 module-level 변수로 받는다.
-    셸에서 `source /vault/secrets/creds.env` 가 선행돼야 한다.
+    """워크로드에 주입된 시크릿을 module-level 변수로 받는다.
+
+    config.py 가 /vault/secrets/energy.env 를 직접 읽어 대문자 env 로 올리므로
+    셸에서 `source` 할 필요가 없다 (v1.4.0 변경). AWS_* 는 `s3-rw` Secret 을
+    envFrom 으로 붙이면 들어온다.
     """
     global RUNWAY_API_KEY, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
     data = load_secrets()
