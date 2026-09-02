@@ -16,6 +16,7 @@ venv/
 
 # Claude Code — 사용자별 메타데이터 (권한 규칙, 메모, 캐시 등)
 # 공개 저장소에 들어가면 안 되는 사용자별/세션별 컨텍스트
+.claude/settings.json
 .claude/settings.local.json
 .claude/projects/
 .claude/cache/
