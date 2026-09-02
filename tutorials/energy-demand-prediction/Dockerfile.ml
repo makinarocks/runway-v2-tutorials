@@ -33,8 +33,16 @@
 #   ⚠️ **태그는 가이드 문서 버전에 맞춘다.** 가이드 v1.4.0 → `energy-ml:1.4.0`.
 #      옛 태그는 그 버전 가이드를 보는 사용자가 계속 쓰므로 **레지스트리에서 지우지 않는다.**
 
-# Python 3.11 slim — 런타임 크기 최소화. requirements 의 xgboost>=2.0 / mlflow>=2.10 과 호환.
-FROM python:3.11-slim
+# Python 3.10 slim.
+#
+# ⚠️ **3.10 을 벗어나면 안 된다.** 4단계에서 모델을 서빙하는 MLServer 가 Python 3.10 기반이라,
+# 다른 버전으로 학습하면 cloudpickle 로 직렬화된 모델을 MLServer 가 읽지 못한다.
+# 3.11 로 만들었을 때 실제로 아래 오류가 났다 (2026-09-02):
+#
+#     TypeError: code expected at most 16 arguments, got 18
+#
+# 가이드 2-3 이 Code Server 가상 환경을 3.10 으로 맞추라고 안내하는 것과 같은 이유다.
+FROM python:3.10-slim
 
 WORKDIR /app
 
