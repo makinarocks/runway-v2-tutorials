@@ -478,13 +478,17 @@ def log_to_mlflow() -> None:
 
         runway_model = RunwayModel(model)
         log_kwargs = {
+            # MLflow 3.x 의 인자명. 2.x 의 `artifact_path` 로 바꾸면 아티팩트가 run 경로에
+            # 저장되어 `copy_model_to_pvc` 가 모델을 찾지 못한다.
             "name": "model",
             "python_model": runway_model,
+            # 서빙 런타임과 같은 버전으로 고정한다. 범위 지정이면 모델을 복원하는 쪽에서
+            # 다른 버전이 잡혀 예측이 조용히 틀어진다 (requirements.txt 주석 참고).
             "pip_requirements": [
-                "xgboost>=2.0",
-                "scikit-learn>=1.3",
-                "pandas>=2.0",
-                "numpy>=1.24",
+                "xgboost==3.0.2",
+                "scikit-learn==1.7.0",
+                "pandas==2.2.3",
+                "numpy==1.26.4",
             ],
             "registered_model_name": MODEL_NAME,
         }
