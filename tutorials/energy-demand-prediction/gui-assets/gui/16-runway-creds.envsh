@@ -1,0 +1,14 @@
+#!/bin/sh
+# OpenBao Agent Injector 가 넣어 준 자격 증명을 환경 변수로 올린다.
+#
+# nginx 공식 이미지의 entrypoint 는 /docker-entrypoint.d/ 의 `.envsh` 파일을 **source** 하므로,
+# 여기서 export 한 값이 뒤이어 도는 `20-envsubst-on-templates.sh` 에 그대로 보인다.
+# 그 스크립트가 /etc/nginx/templates/*.template 를 렌더하면서 ${RUNWAY_API_KEY} 를 치환한다.
+#
+# 파일이 없으면(로컬 실행 등) 조용히 넘어간다 — nginx 는 정적 서빙만 하게 된다.
+if [ -f /vault/secrets/creds.env ]; then
+    . /vault/secrets/creds.env
+    export RUNWAY_API_KEY RUNWAY_PROJECT_ID RUNWAY_BASE_DOMAIN
+fi
+: "${RUNWAY_API_KEY:=}"
+export RUNWAY_API_KEY

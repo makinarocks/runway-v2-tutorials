@@ -1,19 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Layout, Card, Button, Upload, Progress, Alert, Statistic, Row, Col, Tabs, message, Space, Typography, Divider, Form, Input, InputNumber, Select, Slider, Switch, Popconfirm } from 'antd';
+import { Layout, Card, Button, Upload, Progress, Alert, Statistic, Row, Col, Tabs, message, Space, Typography, Divider, Form, Input, InputNumber, Select, Slider, Switch, Popconfirm, Modal } from 'antd';
 import { UploadOutlined, CloudUploadOutlined, BarChartOutlined, LineChartOutlined, PieChartOutlined, DashboardOutlined, PlayCircleOutlined, ThunderboltOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ReferenceLine } from 'recharts';
 import dayjs from 'dayjs';
 import axios from 'axios';
 import Papa from 'papaparse';
 
-const { Header, Sider, Content } = Layout;
+const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
 
 export default function EnergyDemandMLOpsSystem() {
-  const [collapsed, setCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState('dashboard');
   const [predictionData, setPredictionData] = useState([]);
   const [actualData, setActualData] = useState([]);
   const [combinedData, setCombinedData] = useState([]);
@@ -41,7 +39,6 @@ export default function EnergyDemandMLOpsSystem() {
   const [settings, setSettings] = useState({
     autoFollowSlider: true,
     accuracyThreshold: 85,
-    simulateOnError: true,
   });
   const bulkAbortControllerRef = useRef(null);
   const retrainIntervalRef = useRef(null);
@@ -55,23 +52,20 @@ export default function EnergyDemandMLOpsSystem() {
   const [cachedPredictionRows, setCachedPredictionRows] = useState(null); // 추론 데이터 업로드에서 생성된 API 인풋 캐시
   const [lastUploadType, setLastUploadType] = useState(null); // 마지막 업로드 타입 ('prediction' 또는 'actual')
 
-  // API 설정 — Runway 2.0: 설정 패널에서 사용자가 입력
+  // 엔드포인트 설정 — 사용자가 콘솔에서 복사한 URL 을 그대로 붙여넣는다.
+  //
+  // 자격 증명은 여기에 두지 않는다. 브라우저 코드에 토큰을 두면 화면 소스에 노출되므로,
+  // nginx 가 서버 쪽에서 Authorization 헤더를 붙인다 (gui/default.conf.template 참고).
   const [apiSettings, setApiSettings] = useState({
-    apiKey: '',               // Runway API 토큰 (OpenBao runway_api_key)
-    inferenceEndpoint: '',    // https://inference.<domain>/api/<proj>/<ep>/<deploy>
-    deploymentId: 'default',  // KServe V2 model name (Runway MLServer 고정값)
-    airflowUrl: '',           // https://airflow.<domain> (로컬: /api/airflow)
-    airflowToken: '',         // Airflow Bearer 토큰 (브라우저 DevTools 에서 복사)
-    dagId: '',                // energy_demand_prediction_<project-id>
+    inferenceEndpoint: '',    // https://inference.<domain>/api/<project-id>/<endpoint-id>
+    dagTriggerUrl: '',        // https://<airflow-host>.<domain>/api/v2/dags/<dag-id>/dagRuns
   });
   const [apiSettingsForm] = Form.useForm();
   const [apiSettingsOpen, setApiSettingsOpen] = useState(true); // 첫 로드시 API 설정 열기
 
-  // KServe V2 추론 URL 구성
-  const API_ENDPOINT = apiSettings.inferenceEndpoint
-    ? `${apiSettings.inferenceEndpoint.replace(/\/+$/, '')}/v2/models/${apiSettings.deploymentId}/infer`
-    : '';
-  const API_KEY_TOKEN = apiSettings.apiKey;
+  // 콘솔에서 복사한 REST API URL 이 곧 추론 주소다. 뒤에 경로를 덧붙이지 않는다 —
+  // 붙이면 404 가 난다. 이 주소로 보내면 배포별 트래픽 가중치가 적용된다.
+  const API_ENDPOINT = (apiSettings.inferenceEndpoint || '').replace(/\/+$/, '');
 
   // 샘플 데이터 생성
   const generateSampleData = (type = 'prediction') => {
@@ -472,12 +466,14 @@ export default function EnergyDemandMLOpsSystem() {
       setBulkInferIndex(0);
       setBulkInferTotal(rows.length);
 
+      // nginx 프록시(/api/inference)로 보낸다. 목적지는 헤더로 알려 주고,
+      // Authorization 은 nginx 가 붙인다 — 브라우저는 토큰을 모른다.
       const headers = {
         accept: 'application/json',
         'Content-Type': 'application/json',
-        authorization: `Bearer ${API_KEY_TOKEN}`
+        'X-Inference-URL': API_ENDPOINT,
       };
-      const endpoint = API_ENDPOINT;
+      const endpoint = '/api/inference';
 
       // 1) 배치 payload 구성 (pd 형식, shape = [배치크기])
       const batchPayload = buildPdBatchPayloadFromRows(rows);
@@ -487,19 +483,11 @@ export default function EnergyDemandMLOpsSystem() {
       setBulkInferProgress(70);
 
       // 3) 응답에서 각 행별 72-step horizon 복원
-      let seriesByRow = extractBatchHorizonFromResponse(resp?.data, rows || []);
+      // 추론이 실패하면 빈 결과로 둔다. 예전에는 시뮬레이션 값을 대신 그렸는데,
+      // 엔드포인트 설정이 틀려도 그래프가 그려져서 성공한 것처럼 보였다.
+      const seriesByRow = extractBatchHorizonFromResponse(resp?.data, rows || []);
       if (!Array.isArray(seriesByRow) || seriesByRow.length === 0) {
-        // Fallback: 시뮬레이션 (설정에 따라)
-        try {
-          if (settings?.simulateOnError) {
-            seriesByRow = rows.map(r => simulateHorizonFromRow(r));
-          } else {
-            seriesByRow = rows.map(() => []);
-          }
-        } catch (fallbackError) {
-          console.error('시뮬레이션 폴백 중 오류:', fallbackError);
-          seriesByRow = rows.map(() => []);
-        }
+        throw new Error('추론 응답에서 예측값을 읽지 못했습니다. 엔드포인트 URL 을 확인하세요.');
       }
 
       if (controller.signal.aborted) {
@@ -691,15 +679,6 @@ export default function EnergyDemandMLOpsSystem() {
     // "추론" 탭에서도 0시각에서 끊기지 않도록 연결된 예측 시리즈로 표시
     setPredictionData(predForTimeline);
   };
-
-  // 예측 탭으로 전환 시, 현재 데이터가 비어있을 때만 마지막 인퍼런스 결과로 초기 표시
-  useEffect(() => {
-    // 탭 전환 시 최신 상태로 즉시 갱신
-    if (activeTab === 'comparison') {
-      const idx = (sliderIndexRef.current != null) ? sliderIndexRef.current : lastInferredRowIndex;
-      if (idx != null) refreshSelectionView(idx);
-    }
-  }, [activeTab]);
 
   // 일괄 추론 진행 중에도 UI가 따라오도록 최신 인덱스로 갱신
   useEffect(() => {
@@ -937,17 +916,6 @@ export default function EnergyDemandMLOpsSystem() {
   };
 
 
-  // 시뮬레이션용 Horizon 생성 (API 실패 시)
-  const simulateHorizonFromRow = (row) => {
-    const base = buildBaseDateFromRow(row) || dayjs();
-    const out = [];
-    const seed = Number(toNumber(row?.['열수요실적_0'])) || 120;
-    for (let i = 1; i <= 72; i++) {
-      const v = seed + Math.sin(i * Math.PI / 12) * 15 + Math.random() * 8;
-      out.push({ timestamp: base.add(i, 'hour').format('YYYY-MM-DD HH:mm'), value: Number(v.toFixed(2)) });
-    }
-    return out;
-  };
 
   // 유틸: CSV 행 기준 시작 시각 계산
   const buildBaseDateFromRow = (row) => {
@@ -1030,8 +998,8 @@ export default function EnergyDemandMLOpsSystem() {
       message.info('재학습이 진행 중입니다.');
       return;
     }
-    if (!apiSettings.airflowUrl || !apiSettings.dagId) {
-      message.error('Airflow URL 과 DAG ID 를 설정 패널에서 입력해주세요.');
+    if (!apiSettings.dagTriggerUrl) {
+      message.error('Airflow DAG trigger URL 을 먼저 입력하세요 (헤더 엔드포인트 버튼).');
       setApiSettingsOpen(true);
       return;
     }
@@ -1040,27 +1008,21 @@ export default function EnergyDemandMLOpsSystem() {
     setRetrainingProgress(0);
 
     try {
-      // Airflow 3.0 + Keycloak OIDC: 토큰을 직접 사용 (v2 API)
-      setRetrainingProgress(10);
-      const airflowBase = apiSettings.airflowUrl.replace(/\/+$/, '');
-      const token = apiSettings.airflowToken;
-
-      if (!token) {
-        message.error('Airflow 토큰을 설정 패널에서 입력해주세요.');
-        setApiSettingsOpen(true);
-        setIsRetraining(false);
-        return;
-      }
-
-      // DAG trigger (Airflow 3.0 v2 API — logical_date 필수)
+      // DAG trigger (Airflow 3.0 v2 API — logical_date 필수).
+      // 추론과 마찬가지로 nginx 프록시를 거친다. 토큰은 nginx 가 붙인다.
       setRetrainingProgress(30);
       await axios.post(
-        `${airflowBase}/api/v2/dags/${apiSettings.dagId}/dagRuns`,
+        '/api/airflow',
         {
           logical_date: new Date().toISOString(),
           conf: {},
         },
-        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Airflow-URL': apiSettings.dagTriggerUrl,
+          },
+        }
       );
       message.success('Airflow DAG 재학습이 트리거되었습니다. Airflow UI 에서 진행 상황을 확인하세요.');
 
@@ -1109,82 +1071,26 @@ export default function EnergyDemandMLOpsSystem() {
     return accuracy <= threshold;
   };
 
-  const sidebarItems = [
-    { key: 'dashboard', icon: <DashboardOutlined />, label: '대시보드' },
-  ];
-
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider 
-        collapsible 
-        collapsed={collapsed} 
-        onCollapse={setCollapsed}
-        theme="light"
-        width={250}
-      >
-        <div style={{ padding: '20px', textAlign: 'center', borderBottom: '1px solid #f0f0f0' }}>
-          <Title level={4} style={{ margin: 0, color: '#1890ff' }}>
-            ⚡ 에너지 수요 예측
-          </Title>
-          {!collapsed && <Text type="secondary">MLOps 시스템</Text>}
-        </div>
-        
-        <div style={{ padding: '20px 0' }}>
-          {sidebarItems.map(item => (
-            <div
-              key={item.key}
-              onClick={() => setActiveTab(item.key)}
-              style={{
-                padding: '12px 24px',
-                cursor: 'pointer',
-                backgroundColor: activeTab === item.key ? '#e6f7ff' : 'transparent',
-                borderRight: activeTab === item.key ? '3px solid #1890ff' : 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px'
-              }}
-            >
-              {item.icon}
-              {!collapsed && <span>{item.label}</span>}
-            </div>
-          ))}
-        </div>
-      </Sider>
-
       <Layout>
         <Header style={{ background: '#fff', padding: '0 24px', borderBottom: '1px solid #f0f0f0' }}>
           <Row justify="space-between" align="middle">
             <Col>
-              <Title level={3} style={{ margin: 0 }}>
-                {sidebarItems.find(item => item.key === activeTab)?.label || '대시보드'}
-              </Title>
+              <Space align="baseline">
+                <Title level={4} style={{ margin: 0, color: '#1890ff' }}>
+                  ⚡ 에너지 수요 예측
+                </Title>
+                <Text type="secondary">MLOps 시스템</Text>
+              </Space>
             </Col>
             <Col>
               <Space>
-                <Upload
-                  beforeUpload={handleActualUpload}
-                  showUploadList={false}
-                  accept=".csv"
-                >
-                  <Button icon={<CloudUploadOutlined />}>
-                    실측 데이터 업로드
-                  </Button>
-                </Upload>
-                {/* 추론용 데이터 업로드: 실측 파싱/정밀도/플롯 갱신 없음 */}
-                <Upload
-                  beforeUpload={handlePredictionUpload}
-                  showUploadList={false}
-                  accept=".csv"
-                >
-                  <Button icon={<UploadOutlined />} type="primary">
-                    추론 데이터 업로드
-                  </Button>
-                </Upload>
                 <Button onClick={() => {
                   apiSettingsForm.setFieldsValue(apiSettings);
                   setApiSettingsOpen(true);
                 }}>
-                  API 설정
+                  엔드포인트
                 </Button>
                 <Button icon={<SettingOutlined />} onClick={() => {
                   settingsForm.setFieldsValue(settings);
@@ -1198,57 +1104,105 @@ export default function EnergyDemandMLOpsSystem() {
         </Header>
 
         <Content style={{ padding: '24px', background: '#f5f5f5' }}>
-          {/* API 설정 (Runway 2.0) */}
-          {apiSettingsOpen && (
-            <Card title="API 설정 (Runway 2.0)" style={{ marginBottom: 24 }} extra={
-              <Button onClick={() => setApiSettingsOpen(false)}>닫기</Button>
-            }>
-              <Form
-                form={apiSettingsForm}
-                layout="vertical"
-                initialValues={apiSettings}
-                onFinish={(vals) => {
-                  setApiSettings(vals);
-                  setApiSettingsOpen(false);
-                  message.success('API 설정이 저장되었습니다.');
-                }}
+          {/* 엔드포인트 설정 — 첫 접속 시 자동으로 열린다 */}
+          <Modal
+            title="엔드포인트"
+            open={apiSettingsOpen}
+            onCancel={() => setApiSettingsOpen(false)}
+            footer={null}
+            width={720}
+          >
+            <Form
+              form={apiSettingsForm}
+              layout="vertical"
+              initialValues={apiSettings}
+              onFinish={(vals) => {
+                setApiSettings(vals);
+                setApiSettingsOpen(false);
+                message.success('엔드포인트가 저장되었습니다.');
+              }}
+            >
+              <Form.Item
+                name="inferenceEndpoint"
+                label="추론 엔드포인트 URL"
+                extra="Runway 콘솔 모델 서빙 화면의 REST API URL 을 그대로 붙여넣습니다."
+                rules={[{ required: true, message: 'https:// 로 시작하는 URL' }]}
               >
-                <Row gutter={[16, 0]}>
-                  <Col xs={24} md={12}>
-                    <Form.Item name="apiKey" label="Runway API 토큰" rules={[{ required: true }]}>
-                      <Input.Password placeholder="OpenBao runway_api_key 값" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={12}>
-                    <Form.Item name="inferenceEndpoint" label="추론 엔드포인트 URL" rules={[{ required: true }]}>
-                      <Input placeholder="https://inference.<domain>/api/<proj>/<ep>/<deploy>" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <Form.Item name="deploymentId" label="Deployment ID (KServe)">
-                      <Input placeholder="default" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <Form.Item name="airflowUrl" label="Airflow URL">
-                      <Input placeholder="https://airflow.<domain>" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={8}>
-                    <Form.Item name="dagId" label="DAG ID">
-                      <Input placeholder="energy_demand_prediction_<project-id>" />
-                    </Form.Item>
-                  </Col>
-                  <Col xs={24} md={24}>
-                    <Form.Item name="airflowToken" label="Airflow 토큰 (브라우저 DevTools > Network > Authorization 헤더에서 복사)">
-                      <Input.Password placeholder="eyJ..." />
-                    </Form.Item>
-                  </Col>
-                </Row>
+                <Input placeholder="https://inference.<domain>/api/<project-id>/<endpoint-id>" />
+              </Form.Item>
+              <Form.Item
+                name="dagTriggerUrl"
+                label="Airflow DAG trigger URL"
+                extra="재학습 버튼이 호출할 주소입니다."
+                rules={[{ required: true, message: 'https:// 로 시작하는 URL' }]}
+              >
+                <Input placeholder="https://<airflow-host>.<domain>/api/v2/dags/<dag-id>/dagRuns" />
+              </Form.Item>
+              <Space>
                 <Button type="primary" htmlType="submit">저장</Button>
-              </Form>
-            </Card>
+                <Button onClick={() => setApiSettingsOpen(false)}>취소</Button>
+              </Space>
+            </Form>
+          </Modal>
+
+          {/* 데이터 업로드 */}
+          <Card title="데이터 업로드" style={{ marginBottom: 24 }}>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12}>
+                <Upload.Dragger
+                  name="prediction-csv"
+                  beforeUpload={handlePredictionUpload}
+                  showUploadList={false}
+                  accept=".csv"
+                >
+                  <p className="ant-upload-drag-icon"><UploadOutlined /></p>
+                  <p className="ant-upload-text">추론 데이터 업로드 (CSV)</p>
+                  <p className="ant-upload-hint">파일을 끌어다 놓거나 클릭해서 선택. 모델이 72시간 horizon 예측.</p>
+                </Upload.Dragger>
+              </Col>
+              <Col xs={24} md={12}>
+                <Upload.Dragger
+                  name="actual-csv"
+                  beforeUpload={handleActualUpload}
+                  showUploadList={false}
+                  accept=".csv"
+                >
+                  <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
+                  <p className="ant-upload-text">실측 데이터 업로드 (CSV)</p>
+                  <p className="ant-upload-hint">파일을 끌어다 놓거나 클릭해서 선택. 예측과 비교해 정확도 계산.</p>
+                </Upload.Dragger>
+              </Col>
+            </Row>
+          </Card>
+
+          {/* 정확도가 임계값에 못 미치면 재학습을 권하는 배너 */}
+          {globalMetrics?.accuracy != null && Number.isFinite(globalMetrics.accuracy)
+            && isAccuracyBelowThreshold(globalMetrics.accuracy, settings?.accuracyThreshold ?? 85) && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 24 }}
+              message={`전체 정확도 ${safeDisplayNumber(globalMetrics.accuracy, 2)}% — 임계값 (${settings?.accuracyThreshold ?? 85}%) 미달`}
+              description="새로 쌓인 데이터로 모델을 재학습해서 정확도를 끌어올릴 수 있습니다."
+              action={
+                <Space>
+                  {Boolean(isRetraining) && (
+                    <Progress percent={safeDisplayNumber(retrainingProgress, 0)} size="small" style={{ width: 160 }} />
+                  )}
+                  <Button
+                    type="primary"
+                    icon={<ReloadOutlined />}
+                    onClick={handleRetraining}
+                    loading={Boolean(isRetraining)}
+                    disabled={Boolean(retrainCompleted)}
+                  >
+                    모델 재학습
+                  </Button>
+                </Space>
+              }
+            />
           )}
+
 
           {/* 설정 창 */}
           {settingsOpen && (
@@ -1298,11 +1252,6 @@ export default function EnergyDemandMLOpsSystem() {
                       <InputNumber style={{ width: '100%' }} min={0} max={100} />
                     </Form.Item>
                   </Col>
-                  <Col xs={24} md={8}>
-                    <Form.Item name="simulateOnError" label="API 오류 시 시뮬레이션 사용" valuePropName="checked">
-                      <Switch />
-                    </Form.Item>
-                  </Col>
                 </Row>
 
                 <Row>
@@ -1336,7 +1285,7 @@ export default function EnergyDemandMLOpsSystem() {
                       <Statistic title="MAPE" value={safeDisplayNumber(metrics?.mape, 0)} suffix="%" valueStyle={{ color: metrics && Number.isFinite(metrics.mape) ? getPerformanceColor(metrics.mape) : '#666' }} />
                     </Col>
                     <Col span={12}>
-                      <Statistic title="MAE" value={safeDisplayNumber(metrics?.mae, 0)} suffix="kWh" />
+                      <Statistic title="MAE" value={safeDisplayNumber(metrics?.mae, 0)} suffix="Gcal/h" />
                     </Col>
                     
                   </Row>
@@ -1352,26 +1301,10 @@ export default function EnergyDemandMLOpsSystem() {
                       <Statistic title="전체 MAPE" value={safeDisplayNumber(globalMetrics?.mape, 0)} suffix="%" valueStyle={{ color: globalMetrics && Number.isFinite(globalMetrics.mape) ? getPerformanceColor(globalMetrics.mape) : '#666' }} />
                     </Col>
                     <Col span={12}>
-                      <Statistic title="전체 MAE" value={globalMetrics?.mae ?? 0} suffix="kWh" />
+                      <Statistic title="전체 MAE" value={globalMetrics?.mae ?? 0} suffix="Gcal/h" />
                     </Col>
                     
                   </Row>
-                  {globalMetrics?.accuracy != null && Number.isFinite(globalMetrics.accuracy) && isAccuracyBelowThreshold(globalMetrics.accuracy, settings?.accuracyThreshold ?? 85) && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 12 }}>
-                      {Boolean(isRetraining) && (
-                        <Progress percent={safeDisplayNumber(retrainingProgress, 0)} size="small" style={{ width: 160 }} />
-                      )}
-                      <Button
-                        type="primary"
-                        icon={<ReloadOutlined />}
-                        onClick={handleRetraining}
-                        loading={Boolean(isRetraining)}
-                        disabled={Boolean(retrainCompleted)}
-                      >
-                        재학습
-                      </Button>
-                    </div>
-                  )}
                 </Card>
               </Col>
             </Row>
@@ -1438,7 +1371,7 @@ export default function EnergyDemandMLOpsSystem() {
                     <Tooltip 
                       labelFormatter={(value) => dayjs(value).format('YYYY-MM-DD HH:mm')}
                       formatter={(value, name) => [
-                        `${Number(value).toFixed(2)} kWh`,
+                        `${Number(value).toFixed(2)} Gcal/h`,
                         name === 'predicted' ? '예측값' : '실측값'
                       ]}
                     />

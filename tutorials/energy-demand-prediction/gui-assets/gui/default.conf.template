@@ -1,0 +1,63 @@
+# 대시보드용 nginx 설정 — 시작 시 envsubst 로 렌더된다.
+#
+# ## 왜 프록시가 필요한가
+#
+# 추론 엔드포인트와 Airflow 는 인증을 요구한다. 대시보드는 브라우저에서 도니까
+# 자격 증명을 JS 에 두면 화면 소스에 그대로 노출된다. 그래서 **nginx 가 서버 쪽에서
+# Authorization 헤더를 붙인다.** 브라우저는 토큰을 모른다.
+#
+# ## 목적지는 어떻게 정하나
+#
+# 사용자가 콘솔에서 복사한 URL 을 대시보드에 붙여넣으면, 브라우저가 그 주소를
+# `X-Inference-URL` / `X-Airflow-URL` 헤더에 담아 보낸다. nginx 는 그 주소로 넘긴다.
+# 프로젝트마다 도메인이 달라서 설정 파일에 URL 을 박을 수 없기 때문이다.
+#
+# ⚠️ 목적지는 **RUNWAY_BASE_DOMAIN 안쪽으로 제한**한다. 제한이 없으면 요청을 보낸
+# 사람이 아무 주소나 지정해서, nginx 가 그 주소로 자격 증명을 붙여 보내게 된다.
+
+resolver 1.1.1.1 8.8.8.8 valid=30s ipv6=off;
+
+map $http_x_inference_url $inference_target {
+    default                                        "";
+    "~^https://[A-Za-z0-9.-]+\.${RUNWAY_BASE_DOMAIN}(/|$)"  $http_x_inference_url;
+}
+
+map $http_x_airflow_url $airflow_target {
+    default                                        "";
+    "~^https://[A-Za-z0-9.-]+\.${RUNWAY_BASE_DOMAIN}(/|$)"  $http_x_airflow_url;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # SPA 정적 파일
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 추론 프록시 — 목적지는 X-Inference-URL 헤더로 받는다
+    location = /api/inference {
+        if ($inference_target = "") {
+            return 400 "X-Inference-URL header missing or not allowed";
+        }
+        proxy_pass $inference_target;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header Authorization "Bearer ${RUNWAY_API_KEY}";
+        proxy_ssl_server_name on;
+        proxy_read_timeout 300s;
+    }
+
+    # Airflow DAG trigger 프록시 — 목적지는 X-Airflow-URL 헤더로 받는다
+    location = /api/airflow {
+        if ($airflow_target = "") {
+            return 400 "X-Airflow-URL header missing or not allowed";
+        }
+        proxy_pass $airflow_target;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header Authorization "Bearer ${RUNWAY_API_KEY}";
+        proxy_ssl_server_name on;
+        proxy_read_timeout 60s;
+    }
+}
