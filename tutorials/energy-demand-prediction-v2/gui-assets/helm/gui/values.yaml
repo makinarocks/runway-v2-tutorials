@@ -1,0 +1,37 @@
+replicaCount: 1
+
+image:
+  repository: gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui
+  tag: "1.2.0"
+  pullPolicy: Always
+
+imagePullSecrets: []
+
+service:
+  port: 80
+
+httpRoute:
+  enabled: true
+  hostname: "<your-gui-hostname>.<your-runway-domain>"
+
+# OpenBao Agent Injector 설정.
+#
+# 대시보드의 nginx 가 추론·Airflow 호출에 붙일 자격 증명을 여기서 받는다.
+# 주입된 파일(/vault/secrets/creds.env)은 컨테이너가 뜰 때 환경 변수로 올라가고,
+# nginx 설정 템플릿의 ${RUNWAY_API_KEY} 로 치환된다.
+#
+# 본인 환경에 맞게 namespace / role 만 바꾸면 된다:
+#   podAnnotations:
+#     vault.hashicorp.com/namespace: "<your-project-id>"
+#     vault.hashicorp.com/role: "default"
+podAnnotations:
+  vault.hashicorp.com/agent-inject: "true"
+  vault.hashicorp.com/namespace: ""
+  vault.hashicorp.com/role: ""
+  vault.hashicorp.com/agent-inject-secret-creds.env: "secret/data/energy"
+  vault.hashicorp.com/agent-inject-template-creds.env: |
+    {{- with secret "secret/data/energy" -}}
+    export RUNWAY_API_KEY="{{ .Data.data.runway_api_key }}"
+    export RUNWAY_PROJECT_ID="{{ .Data.data.runway_project_id }}"
+    export RUNWAY_BASE_DOMAIN="{{ .Data.data.runway_base_domain }}"
+    {{- end }}

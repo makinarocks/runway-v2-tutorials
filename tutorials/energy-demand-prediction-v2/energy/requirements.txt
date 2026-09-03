@@ -1,0 +1,20 @@
+# 버전을 고정한다 — 모델을 서빙하는 MLServer 런타임과 맞추기 위해서다.
+#
+# 학습에서 만든 모델은 cloudpickle 로 직렬화되어 MLServer 안에서 복원된다.
+# 직렬화에 관여하는 패키지(xgboost·scikit-learn·numpy·pandas)의 버전이 학습과 서빙에서
+# 어긋나면 복원이 조용히 실패한다. 특히 xgboost 는 메이저/마이너가 다르면
+# `base_score` 가 복원되지 않아 예측값이 0 부근으로 몰린다 — 오류 없이 결과만 틀린다.
+#
+# mlflow 만 서빙(2.22.1)보다 높은 3.x 를 쓴다. 학습 쪽 3.x 로 기록한 모델은 서빙 2.x 에서
+# 정상 로드되고, 반대로 2.x 로 기록하면 아티팩트가 run 경로에 저장되어
+# `copy_model_to_pvc` 가 찾는 `models/m-<id>/` 레이아웃이 나오지 않는다.
+#
+# ⚠️ 범위 지정(`>=`)으로 되돌리지 않는다. 빌드 시점의 최신 버전이 들어와 위 문제가 재발한다.
+pandas==2.2.3
+numpy==1.26.4
+xgboost==3.0.2
+scikit-learn==1.7.0
+mlflow==3.15.2
+cloudpickle==3.1.1
+boto3>=1.28
+requests>=2.31
