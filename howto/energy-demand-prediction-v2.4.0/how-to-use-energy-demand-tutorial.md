@@ -2051,7 +2051,7 @@ MLServer가 모델 로드에 실패한 상태입니다.
 5. **차트**와 **차트 버전**을 선택합니다. 선택하면 하단에 **헬름 차트(values.yaml)**가 표시됩니다.
 
     - **차트**: `energy-gui`
-    - **차트 버전**: `1.2.0`
+    - **차트 버전**: `1.2.1`
 
     ![차트 선택](../assets/screens/05-01-custom-app-create-04_v240.png)
 
@@ -2523,8 +2523,8 @@ MLflow → Models → `<your-project-id>.energy-xgboost`에서도 새 버전(Ver
 | 자산 | 본문에서 사용하는 값 | 자가 빌드 위치 |
 |------|-------------------|--------------|
 | ML 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.4.0` | **A-1** |
-| GUI 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui:1.2.0` | **A-2** |
-| GUI Helm 차트 | `energy-gui` `1.2.0` @ `https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm` | **A-2** |
+| GUI 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui:1.2.1` | **A-2** |
+| GUI Helm 차트 | `energy-gui` `1.2.1` @ `https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm` | **A-2** |
 
 빌드 후 본인 Gitea 레지스트리에 push한 다음:
 
@@ -2607,8 +2607,8 @@ GITEA_PAT="<your-gitea-pat>"
 
 echo "$GITEA_PAT" | docker login gitea.<your-runway-domain> -u "$GITEA_USER" --password-stdin
 
-docker build -f Dockerfile.gui -t gitea.<your-runway-domain>/$GITEA_USER/energy-gui:1.2.0 .
-docker push gitea.<your-runway-domain>/$GITEA_USER/energy-gui:1.2.0
+docker build -f Dockerfile.gui -t gitea.<your-runway-domain>/$GITEA_USER/energy-gui:1.2.1 .
+docker push gitea.<your-runway-domain>/$GITEA_USER/energy-gui:1.2.1
 ```
 
 ### Helm 차트 패키징 및 push
@@ -2618,7 +2618,7 @@ docker push gitea.<your-runway-domain>/$GITEA_USER/energy-gui:1.2.0
 ```yaml
 image:
   repository: gitea.<your-runway-domain>/<your-gitea-username>/energy-gui
-  tag: "1.2.0"
+  tag: "1.2.1"
 ```
 
 패키징 및 Gitea Helm 레지스트리에 업로드합니다.
@@ -2628,7 +2628,7 @@ helm package helm/gui -d /tmp
 
 curl -X POST \
   -u "$GITEA_USER:$GITEA_PAT" \
-  -F "chart=@/tmp/energy-gui-1.2.0.tgz" \
+  -F "chart=@/tmp/energy-gui-1.2.1.tgz" \
   "https://gitea.<your-runway-domain>/api/packages/$GITEA_USER/helm/api/charts"
 ```
 
