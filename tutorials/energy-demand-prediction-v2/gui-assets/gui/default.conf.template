@@ -15,7 +15,11 @@
 # ⚠️ 목적지는 **RUNWAY_BASE_DOMAIN 안쪽으로 제한**한다. 제한이 없으면 요청을 보낸
 # 사람이 아무 주소나 지정해서, nginx 가 그 주소로 자격 증명을 붙여 보내게 된다.
 
-resolver 1.1.1.1 8.8.8.8 valid=30s ipv6=off;
+# 동적 proxy_pass 의 호스트명은 nginx 가 /etc/resolv.conf 가 아니라 이 resolver 로 푼다.
+# 공개 DNS 를 박아 두면 사설 DNS 에만 있는 Runway 도메인은 Host not found 가 난다.
+# NGINX_LOCAL_RESOLVERS 는 공식 이미지의 15-local-resolvers.envsh 가 /etc/resolv.conf 의
+# nameserver 로 채운다 (Dockerfile 의 NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1).
+resolver ${NGINX_LOCAL_RESOLVERS} valid=30s ipv6=off;
 
 map $http_x_inference_url $inference_target {
     default                                        "";

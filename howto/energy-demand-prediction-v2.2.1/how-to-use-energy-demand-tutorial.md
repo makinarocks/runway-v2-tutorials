@@ -1884,7 +1884,7 @@ MLServer가 모델 로드에 실패한 상태입니다.
 5. **차트**와 **차트 버전**을 선택합니다. 선택하면 하단에 **헬름 차트(values.yaml)**가 표시됩니다.
 
     - **차트**: `energy-gui`
-    - **차트 버전**: `1.1.5`
+    - **차트 버전**: `1.1.6`
 
     
 
@@ -2470,8 +2470,8 @@ kubectl get ns runway-applications # 클러스터 관리자 권한일 때만 접
 | 자산 | 본문에서 사용하는 값 | 자가 빌드 위치 |
 |------|-------------------|--------------|
 | ML 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.3.2` | **B-1** |
-| GUI 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui:1.1.5` | **B-2** |
-| GUI Helm 차트 | `energy-gui` `1.1.5` @ `https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm` | **B-2** |
+| GUI 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui:1.1.6` | **B-2** |
+| GUI Helm 차트 | `energy-gui` `1.1.6` @ `https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm` | **B-2** |
 
 빌드 후 본인 Gitea 레지스트리에 push한 다음:
 
@@ -2520,40 +2520,43 @@ gitea.<your-runway-domain>/<your-gitea-username>/energy-ml:1.3.2
 
 ## B-2. GUI 이미지 + Helm 차트 빌드 {#gui}
 
-관련 파일: `Dockerfile.gui`, `gui/`, `helm-gui/`
+관련 파일: `gui-assets/patch-1.1.6/` (`Dockerfile`, `entrypoint.sh`, `helm/energy-gui/`)
+
+!!! note "1.1.6 은 1.1.5 파생 패치 이미지"
+    1.1.5 의 소스는 저장소에 없습니다. 1.1.6 은 공개 이미지 `energy-gui:1.1.5` 를 베이스로 nginx resolver 만 클러스터 DNS 를 쓰도록 바꾼 이미지라, `patch-1.1.6/Dockerfile` 로 빌드합니다. 화면과 프록시 동작은 1.1.5 와 같습니다.
 
 ### GUI 이미지 빌드 및 push
 
 ```bash title="GUI 이미지 빌드 및 푸시 - 로컬 터미널"
-cd tutorials/energy-demand-prediction
+cd tutorials/energy-demand-prediction/gui-assets/patch-1.1.6
 
 GITEA_USER="<your-gitea-username>"
 GITEA_PAT="<your-gitea-pat>"
 
 echo "$GITEA_PAT" | docker login gitea.<your-runway-domain> -u "$GITEA_USER" --password-stdin
 
-docker build -f Dockerfile.gui -t gitea.<your-runway-domain>/$GITEA_USER/energy-gui:1.1.5 .
-docker push gitea.<your-runway-domain>/$GITEA_USER/energy-gui:1.1.5
+# 베이스 이미지(1.1.5)가 amd64 전용이므로 플랫폼을 고정합니다
+docker buildx build --platform linux/amd64 -t gitea.<your-runway-domain>/$GITEA_USER/energy-gui:1.1.6 --push .
 ```
 
 ### Helm 차트 패키징 및 push
 
-`helm-gui/values.yaml`의 `image.repository`를 본인 이미지로 먼저 수정합니다.
+`helm/energy-gui/values.yaml`의 `image.repository`를 본인 이미지로 먼저 수정합니다.
 
 ```yaml
 image:
   repository: gitea.<your-runway-domain>/<your-gitea-username>/energy-gui
-  tag: "1.1.5"
+  tag: "1.1.6"
 ```
 
 패키징 및 Gitea Helm 레지스트리에 업로드합니다.
 
 ```bash title="Helm 차트 패키징 및 업로드 - 로컬 터미널"
-helm package helm-gui -d /tmp
+helm package helm/energy-gui -d /tmp
 
 curl -X POST \
   -u "$GITEA_USER:$GITEA_PAT" \
-  -F "chart=@/tmp/energy-gui-1.1.5.tgz" \
+  -F "chart=@/tmp/energy-gui-1.1.6.tgz" \
   "https://gitea.<your-runway-domain>/api/packages/$GITEA_USER/helm/api/charts"
 ```
 

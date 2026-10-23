@@ -18,6 +18,8 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
+# 템플릿의 ${NGINX_LOCAL_RESOLVERS} 를 컨테이너의 /etc/resolv.conf nameserver 로 채운다
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 COPY gui/default.conf.template /etc/nginx/templates/default.conf.template
 COPY gui/16-runway-creds.envsh /docker-entrypoint.d/16-runway-creds.envsh
 RUN chmod +x /docker-entrypoint.d/16-runway-creds.envsh
