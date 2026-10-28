@@ -244,7 +244,7 @@ MLflow: https://mlflow.<your-runway-domain>
   "runway_project_id": "<your-project-id>",
   "runway_api_key": "<your-runway-api-key>",
   "pvc_name": "<your-pvc-name>",
-  "ml_image": "gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.4.0"
+  "ml_image": "gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.4.0"
 }
 ```
 
@@ -483,7 +483,7 @@ OpenBao는 Kubernetes 기반 자격 증명 관리 솔루션으로, 이후 단계
         | `runway_project_id` | 프로젝트 ID |
         | `runway_api_key` | Runway API 키 |
         | `pvc_name` | 1단계에서 만들 PVC 이름 (예: `heat-data`) |
-        | `ml_image` | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.4.0` |
+        | `ml_image` | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.4.0` |
 
         ![자격 증명 등록 화면](../assets/screens/00-02-secret-register-03_v240.png)
 
@@ -2041,7 +2041,7 @@ MLServer가 모델 로드에 실패한 상태입니다.
 4. **헬름 리포지토리 URL**에 아래 주소를 입력하고, **저장** 버튼을 클릭합니다.
 
     ```
-    https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm
+    https://gitea.try.mrxrunway.ai/api/packages/mrxpdm-public-tutorial/helm
     ```
 
     ![차트 등록](../assets/screens/05-01-custom-app-create-03_v240.png)
@@ -2522,9 +2522,9 @@ MLflow → Models → `<your-project-id>.energy-xgboost`에서도 새 버전(Ver
 
 | 자산 | 본문에서 사용하는 값 | 자가 빌드 위치 |
 |------|-------------------|--------------|
-| ML 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.4.0` | **A-1** |
-| GUI 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui:1.2.1` | **A-2** |
-| GUI Helm 차트 | `energy-gui` `1.2.1` @ `https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm` | **A-2** |
+| ML 이미지 | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.4.0` | **A-1** |
+| GUI 이미지 | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-gui:1.2.1` | **A-2** |
+| GUI Helm 차트 | `energy-gui` `1.2.1` @ `https://gitea.try.mrxrunway.ai/api/packages/mrxpdm-public-tutorial/helm` | **A-2** |
 
 빌드 후 본인 Gitea 레지스트리에 push한 다음:
 

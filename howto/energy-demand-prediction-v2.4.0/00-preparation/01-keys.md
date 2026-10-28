@@ -42,7 +42,7 @@
   "runway_project_id": "<your-project-id>",
   "runway_api_key": "<your-runway-api-key>",
   "pvc_name": "<your-pvc-name>",
-  "ml_image": "gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.4.0"
+  "ml_image": "gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.4.0"
 }
 ```
 

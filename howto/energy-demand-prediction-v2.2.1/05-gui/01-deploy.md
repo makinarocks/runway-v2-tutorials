@@ -29,7 +29,7 @@
 4. **헬름 리포지토리 URL**에 아래 주소를 입력하고, **저장** 버튼을 클릭합니다.
 
     ```
-    https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm
+    https://gitea.try.mrxrunway.ai/api/packages/mrxpdm-public-tutorial/helm
     ```
 
     ![차트 등록](../assets/screens/05-01-custom-app-create-03.png)

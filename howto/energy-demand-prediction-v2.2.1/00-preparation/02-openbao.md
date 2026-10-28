@@ -96,7 +96,7 @@ OpenBao는 Kubernetes 기반 시크릿 관리 솔루션으로, 이후 단계에�
         | `aws_secret_access_key` | Runway S3 Secret Key |
         | `openbao_role` | 프로젝트 ID (예: `pdm-tutorial-energy`) |
         | `pvc_name` | 1단계에서 만들 PVC 이름 (예: `energy`) |
-        | `ml_image` | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.3.2` |
+        | `ml_image` | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.3.2` |
 
         ![시크릿 등록 화면](../assets/screens/00-02-secret-register-03.png)
 

@@ -95,7 +95,7 @@ OpenBao는 Kubernetes 기반 자격 증명 관리 솔루션으로, 이후 단계
         | `runway_project_id` | 프로젝트 ID |
         | `runway_api_key` | Runway API 키 |
         | `pvc_name` | 1단계에서 만들 PVC 이름 (예: `heat-data`) |
-        | `ml_image` | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.4.0` |
+        | `ml_image` | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.4.0` |
 
         ![자격 증명 등록 화면](../assets/screens/00-02-secret-register-03_v240.png)
 

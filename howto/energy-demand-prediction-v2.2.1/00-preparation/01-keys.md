@@ -36,7 +36,7 @@
   "aws_secret_access_key": "<your-s3-secret-key>",
   "openbao_role": "<your-project-id>",
   "pvc_name": "energy",
-  "ml_image": "gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.3.2"
+  "ml_image": "gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.3.2"
 }
 ```
 

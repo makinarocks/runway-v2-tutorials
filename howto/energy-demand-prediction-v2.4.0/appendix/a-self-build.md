@@ -6,9 +6,9 @@
 
 | 자산 | 본문에서 사용하는 값 | 자가 빌드 위치 |
 |------|-------------------|--------------|
-| ML 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.4.0` | **A-1** |
-| GUI 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui:1.2.1` | **A-2** |
-| GUI Helm 차트 | `energy-gui` `1.2.1` @ `https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm` | **A-2** |
+| ML 이미지 | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.4.0` | **A-1** |
+| GUI 이미지 | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-gui:1.2.1` | **A-2** |
+| GUI Helm 차트 | `energy-gui` `1.2.1` @ `https://gitea.try.mrxrunway.ai/api/packages/mrxpdm-public-tutorial/helm` | **A-2** |
 
 빌드 후 본인 Gitea 레지스트리에 push한 다음:
 

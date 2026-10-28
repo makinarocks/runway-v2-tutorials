@@ -212,7 +212,7 @@ Runway에서 필요한 작업 환경을 구성하는 것부터, 추론 결과와
   "aws_secret_access_key": "<your-s3-secret-key>",
   "openbao_role": "<your-project-id>",
   "pvc_name": "energy",
-  "ml_image": "gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.3.2"
+  "ml_image": "gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.3.2"
 }
 ```
 
@@ -466,7 +466,7 @@ OpenBao는 Kubernetes 기반 시크릿 관리 솔루션으로, 이후 단계에�
         | `aws_secret_access_key` | Runway S3 Secret Key |
         | `openbao_role` | 프로젝트 ID (예: `pdm-tutorial-energy`) |
         | `pvc_name` | 1단계에서 만들 PVC 이름 (예: `energy`) |
-        | `ml_image` | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.3.2` |
+        | `ml_image` | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.3.2` |
 
         
 
@@ -1872,7 +1872,7 @@ MLServer가 모델 로드에 실패한 상태입니다.
 4. **헬름 리포지토리 URL**에 아래 주소를 입력하고, **저장** 버튼을 클릭합니다.
 
     ```
-    https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm
+    https://gitea.try.mrxrunway.ai/api/packages/mrxpdm-public-tutorial/helm
     ```
 
     
@@ -2469,9 +2469,9 @@ kubectl get ns runway-applications # 클러스터 관리자 권한일 때만 접
 
 | 자산 | 본문에서 사용하는 값 | 자가 빌드 위치 |
 |------|-------------------|--------------|
-| ML 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-ml:1.3.2` | **B-1** |
-| GUI 이미지 | `gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui:1.1.6` | **B-2** |
-| GUI Helm 차트 | `energy-gui` `1.1.6` @ `https://gitea.try.mrxrunway.ai/api/packages/tutorial-mrx/helm` | **B-2** |
+| ML 이미지 | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-ml:1.3.2` | **B-1** |
+| GUI 이미지 | `gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-gui:1.1.6` | **B-2** |
+| GUI Helm 차트 | `energy-gui` `1.1.6` @ `https://gitea.try.mrxrunway.ai/api/packages/mrxpdm-public-tutorial/helm` | **B-2** |
 
 빌드 후 본인 Gitea 레지스트리에 push한 다음:
 

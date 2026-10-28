@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: gitea.try.mrxrunway.ai/tutorial-mrx/energy-gui
+  repository: gitea.try.mrxrunway.ai/mrxpdm-public-tutorial/energy-gui
   tag: "1.2.1"
   pullPolicy: Always
 
